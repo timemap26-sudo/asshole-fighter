@@ -52,11 +52,12 @@
     <p class="sub">上傳那個人的大頭照,他就會變成任你處置的魁儡。<br>他不會還手,只會一直求饒…直到徹底崩潰。</p>
     <div class="editor-wrap">
       <canvas id="editor" width="560" height="560"></canvas>
-      <div class="hint">拖曳移動・滾輪 / 雙指縮放<br>把頭放進黃色虛線框,<b>眼睛</b>和<b>嘴巴</b>對準記號<br>背景會自動去掉</div>
+      <div class="hint">上傳後自動把<b>眼睛</b>和<b>嘴巴</b>對準記號<br>背景會自動去掉<br>不準可拖曳移動・滾輪 / 雙指縮放微調</div>
     </div>
     <label class="upload">📷 上傳大頭照<input type="file" id="file" accept="image/*"></label>
+    <div id="align-status">上傳後會自動對齊臉部</div>
     <div class="sliders">
-      <label>縮放 <input type="range" id="zoom" min="0.3" max="5" step="0.01" value="1"></label>
+      <label>縮放 <input type="range" id="zoom" min="0.3" max="12" step="0.01" value="1"></label>
       <label>旋轉 <input type="range" id="rotate" min="-45" max="45" step="1" value="0"></label>
       <label>名字 <input type="text" id="name" maxlength="12" value="那個混蛋"></label>
     </div>

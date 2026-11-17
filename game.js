@@ -136,6 +136,7 @@ const defaultFace = mk(FS, FS);
 const ed = { img: null, zoom: 1, rot: 0, ox: 0, oy: 0 };
 const edC = $('#editor'), edX = edC.getContext('2d');
 const ES = edC.width, ER = ES * 0.42;
+const ZMIN = 0.3, ZMAX = 12;
 function drawSource(x, cx, cy, k) {
   if (!ed.img) { x.drawImage(defaultFace, cx - ER * k, cy - ER * k, 2 * ER * k, 2 * ER * k); return; }
   const img = ed.img, iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
@@ -1393,7 +1394,7 @@ edC.addEventListener('pointermove', e => {
   pointers.set(e.pointerId, [e.clientX, e.clientY]);
   if (pointers.size === 2 && pinchStart) {
     const [a, b] = [...pointers.values()];
-    ed.zoom = clamp(pinchStart.zoom * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinchStart.d, 0.3, 5);
+    ed.zoom = clamp(pinchStart.zoom * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinchStart.d, ZMIN, ZMAX);
     $('#zoom').value = ed.zoom;
   } else if (dragStart) {
     const k = edScale();
@@ -1412,18 +1413,123 @@ edC.addEventListener('pointerup', endPointer);
 edC.addEventListener('pointercancel', endPointer);
 edC.addEventListener('wheel', e => {
   e.preventDefault();
-  ed.zoom = clamp(ed.zoom * Math.exp(-e.deltaY * 0.0015), 0.3, 5);
+  ed.zoom = clamp(ed.zoom * Math.exp(-e.deltaY * 0.0015), ZMIN, ZMAX);
   $('#zoom').value = ed.zoom; drawEditor();
 }, { passive: false });
 $('#zoom').addEventListener('input', e => { ed.zoom = +e.target.value; drawEditor(); });
 $('#rotate').addEventListener('input', e => { ed.rot = (+e.target.value * Math.PI) / 180; drawEditor(); });
+/* auto face alignment: detect eyes + mouth locally (MediaPipe, runs in the browser)
+   and fit a similarity transform that drops them onto the dashed guides */
+const MP_VER = '0.10.14';
+const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}`;
+const MP_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite';
+let detectorP = null;
+function getDetector() {
+  if (!detectorP) {
+    detectorP = (async () => {
+      const { FaceDetector, FilesetResolver } = await import(`${MP_BASE}/vision_bundle.mjs`);
+      const fileset = await FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`);
+      return FaceDetector.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: MP_MODEL }, runningMode: 'IMAGE', minDetectionConfidence: 0.4,
+      });
+    })();
+    detectorP.catch(() => { detectorP = null; });
+  }
+  return detectorP;
+}
+// returns {eyeL, eyeR, mouth} in image pixels (eyeL = left side of the picture), or null
+async function detectFace(img) {
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  try {
+    const det = await getDetector();
+    // the short-range model wants the face to fill a good part of the frame: try the
+    // whole picture first, then overlapping crops for faces in wider shots
+    const tries = [[0, 0, iw, ih]];
+    const m = Math.min(iw, ih), cs = [m * 0.6, m * 0.4];
+    for (const c of cs) for (let y = 0; y + c <= ih + 1; y += c / 2) for (let x = 0; x + c <= iw + 1; x += c / 2) tries.push([x, y, c, c]);
+    const tmp = mk(1, 1), tx = tmp.getContext('2d');
+    let best = null;
+    for (const [sx, sy, sw, sh] of tries) {
+      let src = img, ox = 0, oy = 0, w = iw, h = ih;
+      if (sw !== iw || sh !== ih) {
+        const k = Math.min(1, 640 / sw);
+        tmp.width = Math.round(sw * k); tmp.height = Math.round(sh * k);
+        tx.drawImage(img, sx, sy, sw, sh, 0, 0, tmp.width, tmp.height);
+        src = tmp; ox = sx; oy = sy; w = sw; h = sh;
+      }
+      const res = det.detect(src);
+      for (const d of res.detections || []) {
+        const kp = d.keypoints; if (!kp || kp.length < 4) continue;
+        const P = i => ({ x: ox + kp[i].x * w, y: oy + kp[i].y * h });
+        const size = d.boundingBox ? d.boundingBox.width * (w / (src.width || w)) : 0;
+        const score = (d.categories && d.categories[0] ? d.categories[0].score : 0.5) * (1 + size / m);
+        if (!best || score > best.score) {
+          const [a, b] = [P(0), P(1)].sort((p, q) => p.x - q.x);
+          best = { score, eyeL: a, eyeR: b, mouth: P(3) };
+        }
+      }
+      if (best && best.score > 0.8) break; // good, confident hit
+    }
+    return best;
+  } catch (e) {
+    console.warn('face detection unavailable', e);
+    return null;
+  }
+}
+// least-squares similarity transform (scale+rotation+translation) mapping src pts -> dst pts
+function fitSimilarity(src, dst, wts) {
+  let W = 0, sx = 0, sy = 0, dx = 0, dy = 0;
+  src.forEach((p, i) => { const w = wts[i]; W += w; sx += p.x * w; sy += p.y * w; dx += dst[i].x * w; dy += dst[i].y * w; });
+  sx /= W; sy /= W; dx /= W; dy /= W;
+  let a = 0, b = 0, n = 0;
+  src.forEach((p, i) => {
+    const w = wts[i], qx = p.x - sx, qy = p.y - sy, tx = dst[i].x - dx, ty = dst[i].y - dy;
+    a += w * (qx * tx + qy * ty); b += w * (qx * ty - qy * tx); n += w * (qx * qx + qy * qy);
+  });
+  a /= n; b /= n;
+  return { scale: Math.hypot(a, b), rot: Math.atan2(b, a), tx: dx - (a * sx - b * sy), ty: dy - (b * sx + a * sy) };
+}
+function applyAlignment(img, f) {
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  const c = ES / 2;
+  // image points relative to the picture centre (how drawSource places the image)
+  const rel = p => ({ x: p.x - iw / 2, y: p.y - ih / 2 });
+  const dst = [
+    { x: c - 0.32 * ER, y: c - 0.1 * ER }, { x: c + 0.32 * ER, y: c - 0.1 * ER }, { x: c, y: c + 0.45 * ER },
+  ];
+  const T = fitSimilarity([rel(f.eyeL), rel(f.eyeR), rel(f.mouth)], dst, [1, 1, 0.7]);
+  const base = 2 * ER / Math.min(iw, ih);
+  ed.zoom = clamp(T.scale / base, ZMIN, ZMAX);
+  ed.rot = clamp(T.rot, -Math.PI / 4, Math.PI / 4);
+  // recompute translation so the eye midpoint still lands on target after clamping
+  const s = base * ed.zoom, cos = Math.cos(ed.rot), sin = Math.sin(ed.rot);
+  const em = rel({ x: (f.eyeL.x + f.eyeR.x) / 2, y: (f.eyeL.y + f.eyeR.y) / 2 });
+  const mm = rel(f.mouth);
+  const anchor = { x: em.x * 0.6 + mm.x * 0.4, y: em.y * 0.6 + mm.y * 0.4 };
+  const target = { x: c, y: (c - 0.1 * ER) * 0.6 + (c + 0.45 * ER) * 0.4 };
+  ed.ox = target.x - (cos * anchor.x - sin * anchor.y) * s - c;
+  ed.oy = target.y - (sin * anchor.x + cos * anchor.y) * s - c;
+  $('#zoom').value = ed.zoom; $('#rotate').value = Math.round(ed.rot * 180 / Math.PI);
+}
+const setAlignStatus = (t, cls) => { const el = $('#align-status'); el.textContent = t; el.className = cls || ''; };
+let loadSeq = 0;
 function loadFile(file) {
   if (!file || !/^image\//.test(file.type)) return;
   const img = new Image();
-  img.onload = () => {
+  const seq = ++loadSeq;
+  img.onload = async () => {
     ed.img = img; ed.zoom = 1; ed.rot = 0; ed.ox = 0; ed.oy = 0;
     $('#zoom').value = 1; $('#rotate').value = 0;
     drawEditor();
+    setAlignStatus('🔍 自動對齊臉部中…', 'busy');
+    const f = await detectFace(img);
+    if (seq !== loadSeq) return;
+    if (f) {
+      applyAlignment(img, f); drawEditor();
+      setAlignStatus('✅ 已自動對齊,不準的話可以手動微調', 'ok');
+    } else {
+      setAlignStatus('⚠️ 找不到臉,請手動把眼睛和嘴巴對準虛線', 'warn');
+    }
   };
   img.onerror = () => alert('這張圖片讀不出來,換一張試試看。');
   img.src = URL.createObjectURL(file);
