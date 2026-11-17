@@ -1,0 +1,88 @@
+:root {
+  --bg: #0e0b16;
+  --panel: #1c1728;
+  --ink: #f4efe6;
+  --muted: #a59cb8;
+  --hot: #ff3b3b;
+  --gold: #ffcf3f;
+  --font: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', 'Heiti TC', sans-serif;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--font); }
+body { overflow-x: hidden; }
+button { font-family: inherit; cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+
+#app { max-width: 1200px; margin: 0 auto; padding: 8px 16px 16px; }
+#stage { width: min(100%, calc((100vh - 200px) * 16 / 9)); min-width: 280px; margin: 0 auto; position: relative; }
+#game { display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 10px; background: #000; box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+
+#controls { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 12px auto 0; max-width: 960px; }
+#controls button { border: 3px solid #000; border-radius: 16px; color: #fff; font-weight: 900; font-size: 18px; padding: 10px 14px; min-width: 64px; min-height: 58px; box-shadow: 0 5px 0 #000; transition: transform .05s; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; }
+#controls button:active, #controls button.pressed { transform: translateY(4px); box-shadow: 0 1px 0 #000; }
+#controls small { font-size: 11px; opacity: .75; font-weight: 700; margin-top: 2px; }
+.pad-move { display: flex; gap: 10px; }
+.pad-move button { background: #3b3550; font-size: 24px !important; }
+.pad-atk { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.b-slap { background: #e8457a; }
+.b-punch { background: #e8792b; }
+.b-kick { background: #2f8fd8; }
+.b-throw { background: #7a4fd6; }
+.b-chain { background: #444; min-width: 96px !important; }
+.b-chain.ready { background: linear-gradient(135deg, #ff2d2d, #ffb300); animation: glow .5s infinite alternate; }
+@keyframes glow { from { box-shadow: 0 5px 0 #000, 0 0 6px #ff0; } to { box-shadow: 0 5px 0 #000, 0 0 26px #ffb300; } }
+
+#help { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; max-width: 960px; margin: 14px auto 0; color: var(--muted); font-size: 14px; }
+.combos { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; }
+.combos b { color: var(--ink); }
+.combos .hot { color: var(--gold); }
+kbd { display: inline-block; background: #2b2540; border: 1px solid #4a4266; border-bottom-width: 3px; border-radius: 5px; padding: 0 6px; margin-right: 2px; font-family: inherit; font-size: 12px; color: var(--ink); }
+.opts { display: flex; gap: 8px; }
+.opts button { background: var(--panel); color: var(--ink); border: 1px solid #3a3350; border-radius: 10px; padding: 8px 12px; font-size: 14px; }
+
+.modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(8,5,14,.82); backdrop-filter: blur(4px); z-index: 10; padding: 16px; overflow-y: auto; }
+.modal.show { display: flex; }
+#end { background: rgba(8,5,14,.35); backdrop-filter: none; align-items: flex-end; }
+#end .card { margin: auto auto 4vh; }
+.card { background: linear-gradient(160deg, #241c35, #15111f); border: 2px solid #3d3257; border-radius: 18px; padding: 20px 22px; width: min(440px, 100%); text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.6); margin: auto; }
+.card h1 { margin: 0 0 6px; font-size: 32px; font-weight: 900; letter-spacing: 2px; color: var(--gold); text-shadow: 3px 3px 0 #b3001b; }
+.card h1 span { display: block; font-size: 13px; letter-spacing: 6px; color: var(--muted); text-shadow: none; }
+.card h2 { margin: 0 0 8px; font-size: 34px; font-weight: 900; color: var(--hot); text-shadow: 3px 3px 0 #000; }
+.sub { color: var(--muted); font-size: 14px; margin: 4px 0 12px; line-height: 1.6; }
+.editor-wrap { position: relative; width: 260px; margin: 0 auto; }
+#editor { width: 260px; height: 260px; border-radius: 14px; touch-action: none; cursor: grab; display: block; background: #111; }
+#editor:active { cursor: grabbing; }
+.hint { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+.hint b { color: var(--gold); }
+.upload { display: inline-block; margin: 12px 0 8px; background: #e8457a; color: #fff; font-weight: 900; padding: 10px 18px; border-radius: 12px; border: 3px solid #000; box-shadow: 0 4px 0 #000; cursor: pointer; }
+.upload input { display: none; }
+.sliders { display: grid; gap: 8px; margin: 6px 0 12px; text-align: left; }
+.sliders label { display: grid; grid-template-columns: 44px 1fr; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+.sliders input[type=range] { width: 100%; accent-color: var(--gold); }
+.sliders input[type=text] { width: 100%; background: #0f0c18; border: 1px solid #3d3257; border-radius: 8px; color: var(--ink); padding: 8px 10px; font-family: inherit; font-size: 16px; }
+button.big { background: linear-gradient(135deg, #ff2d2d, #ff8a00); color: #fff; font-size: 24px; font-weight: 900; letter-spacing: 4px; padding: 12px 34px; border: 3px solid #000; border-radius: 14px; box-shadow: 0 5px 0 #000; }
+button.big:active { transform: translateY(3px); box-shadow: 0 2px 0 #000; }
+.privacy { font-size: 11px; color: #6f6788; margin: 12px 0 0; }
+#end-sub { color: var(--ink); font-size: 16px; margin: 0 0 6px; }
+#end-stats { color: var(--muted); font-size: 14px; line-height: 1.8; margin: 0 0 16px; }
+.row-btns { display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap; }
+#change { background: var(--panel); color: var(--ink); border: 2px solid #3d3257; border-radius: 12px; padding: 12px 18px; font-size: 16px; font-weight: 700; }
+
+/* Phones */
+@media (max-width: 700px) {
+  #app { padding: 6px 8px 12px; }
+  #stage { width: 100%; }
+  #controls button { font-size: 15px; min-width: 52px; min-height: 52px; padding: 6px 8px; border-radius: 12px; }
+  .pad-atk { gap: 6px; }
+  .pad-move { gap: 6px; }
+  .b-chain { min-width: 72px !important; }
+  #help { font-size: 12px; }
+}
+/* Landscape phones: put the buttons over the game */
+@media (max-height: 520px) and (orientation: landscape) {
+  #app { padding: 0; max-width: none; }
+  #stage { width: min(100vw, calc(100vh * 16 / 9)); }
+  #game { border-radius: 0; }
+  #controls { position: fixed; left: 0; right: 0; bottom: 6px; padding: 0 10px; margin: 0; max-width: none; pointer-events: none; }
+  #controls button { pointer-events: auto; opacity: .82; min-height: 48px; }
+  #help { display: none; }
+}
