@@ -4,7 +4,8 @@
 (() => {
 const W = 960, H = 540, GY = 478, TAU = Math.PI * 2, GRAV = 1500;
 const $ = s => document.querySelector(s);
-const canvas = $('#game'), ctx = canvas.getContext('2d');
+const canvas = $('#game'), mainCtx = canvas.getContext('2d');
+let ctx = mainCtx; // swapped temporarily when drawing into offscreen layers
 let DPR = 0;
 function fitCanvas() {
   const d = Math.min(window.devicePixelRatio || 1, 2);
@@ -114,7 +115,6 @@ const face = { canvas: mk(FS, FS), gray: mk(FS, FS), skin: '#e8b88f', name: '那
 const defaultFace = mk(FS, FS);
 (function drawDefault() {
   const x = defaultFace.getContext('2d'), c = FS / 2, R = FS / 2;
-  x.fillStyle = '#b9a58f'; x.fillRect(0, 0, FS, FS);
   x.fillStyle = '#f0c49b'; x.beginPath(); x.ellipse(c, c + 8, R * 0.82, R * 0.92, 0, 0, TAU); x.fill();
   x.fillStyle = '#3a2a1e'; x.beginPath(); x.ellipse(c, c - R * 0.62, R * 0.86, R * 0.45, 0, Math.PI, TAU); x.fill();
   x.fillRect(c - R * 0.86, c - R * 0.66, R * 0.2, R * 0.4); x.fillRect(c + R * 0.66, c - R * 0.66, R * 0.2, R * 0.4);
@@ -149,10 +149,10 @@ function drawEditor() {
   x.fillStyle = '#1b1b25'; x.fillRect(0, 0, ES, ES);
   drawSource(x, c, c, 1);
   x.fillStyle = 'rgba(10,8,20,0.66)';
-  x.beginPath(); x.rect(0, 0, ES, ES); x.arc(c, c, ER, 0, TAU); x.fill('evenodd');
+  x.beginPath(); x.rect(0, 0, ES, ES); x.rect(c - ER, c - ER, 2 * ER, 2 * ER); x.fill('evenodd');
   x.save();
   x.strokeStyle = 'rgba(255,215,0,0.95)'; x.lineWidth = 3; x.setLineDash([12, 9]);
-  x.beginPath(); x.arc(c, c, ER, 0, TAU); x.stroke();
+  x.beginPath(); x.ellipse(c, c, ER * 0.8, ER * 0.98, 0, 0, TAU); x.stroke();
   for (const s of [-1, 1]) { x.beginPath(); x.ellipse(c + s * 0.32 * ER, c - 0.1 * ER, 0.14 * ER, 0.085 * ER, 0, 0, TAU); x.stroke(); }
   x.beginPath(); x.ellipse(c, c + 0.45 * ER, 0.24 * ER, 0.09 * ER, 0, 0, TAU); x.stroke();
   x.setLineDash([]);
@@ -160,19 +160,69 @@ function drawEditor() {
   x.fillText('眼', c - 0.32 * ER, c - 0.24 * ER); x.fillText('眼', c + 0.32 * ER, c - 0.24 * ER); x.fillText('嘴', c, c + 0.66 * ER);
   x.restore();
 }
+/* Cut the head out of the photo: flood-fill the background in from the edges
+   (colour-similar, connected to the border), never touching the central face
+   area; fall back to a soft head-shaped oval if that fails. */
+function cutoutHead(d) {
+  const N = FS * FS, bg = new Uint8Array(N), seed = new Int32Array(N).fill(-1), q = new Int32Array(N);
+  let qh = 0, qt = 0;
+  const core = (i) => { const px = (i % FS) / FS - 0.5, py = ((i / FS) | 0) / FS - 0.5; return (px / 0.17) ** 2 + (py / 0.24) ** 2 < 1; };
+  const push = (i, s) => { bg[i] = 1; seed[i] = s; q[qt++] = i; };
+  for (let k = 0; k < FS; k++) for (const i of [k, (FS - 1) * FS + k, k * FS, k * FS + FS - 1]) if (!bg[i]) push(i, i);
+  const dist = (a, b) => Math.abs(d[a * 4] - d[b * 4]) + Math.abs(d[a * 4 + 1] - d[b * 4 + 1]) + Math.abs(d[a * 4 + 2] - d[b * 4 + 2]);
+  while (qh < qt) {
+    const i = q[qh++], px = i % FS;
+    const nb = [px > 0 ? i - 1 : -1, px < FS - 1 ? i + 1 : -1, i - FS, i + FS];
+    for (const j of nb) {
+      if (j < 0 || j >= N || bg[j] || core(j)) continue;
+      if (d[j * 4 + 3] < 20 || d[i * 4 + 3] < 20) push(j, j); // outside the photo, or the photo's own edge
+      else if (dist(i, j) < 30 && dist(seed[i], j) < 90) push(j, seed[i]);
+    }
+  }
+  let removed = 0;
+  for (let i = 0; i < N; i++) removed += bg[i];
+  const frac = removed / N, a = new Float32Array(N);
+  if (frac < 0.06 || frac > 0.85) {
+    // fallback: feathered oval in the shape of a head
+    for (let i = 0; i < N; i++) {
+      const px = (i % FS) / FS - 0.5, py = ((i / FS) | 0) / FS - 0.5, r = Math.hypot(px / 0.4, py / 0.49);
+      a[i] = clamp((1 - r) / 0.06, 0, 1);
+    }
+  } else {
+    // shrink the mask by a pixel (drops background-coloured fringe), then feather it
+    const box = (src, f) => {
+      const out = new Float32Array(N);
+      for (let y = 0; y < FS; y++) for (let x = 0; x < FS; x++) {
+        let s = 0, n = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= FS || yy >= FS) continue;
+          s += src[yy * FS + xx]; n++;
+        }
+        out[y * FS + x] = f(s / n);
+      }
+      return out;
+    };
+    const fg = new Float32Array(N);
+    for (let i = 0; i < N; i++) fg[i] = bg[i] ? 0 : 1;
+    a.set(box(box(fg, v => (v > 0.99 ? 1 : 0)), v => v));
+  }
+  for (let i = 0; i < N; i++) d[i * 4 + 3] = Math.round(d[i * 4 + 3] * a[i]);
+}
 function finalizeFace() {
   const x = face.canvas.getContext('2d');
   x.clearRect(0, 0, FS, FS);
-  x.fillStyle = '#d9b99b'; x.fillRect(0, 0, FS, FS);
   drawSource(x, FS / 2, FS / 2, FS / (2 * ER));
   const g = face.gray.getContext('2d');
+  g.clearRect(0, 0, FS, FS);
   try {
     const id = x.getImageData(0, 0, FS, FS), d = id.data;
+    if (ed.img) { cutoutHead(d); x.putImageData(id, 0, 0); }
     let r = 0, gg = 0, b = 0, n = 0;
     for (let py = Math.floor(FS * 0.55); py < FS * 0.68; py++) {
       for (let px = Math.floor(FS * 0.22); px < FS * 0.78; px++) {
         if (Math.abs(px - FS / 2) < FS * 0.08) continue;
-        const i = (py * FS + px) * 4; r += d[i]; gg += d[i + 1]; b += d[i + 2]; n++;
+        const i = (py * FS + px) * 4; if (d[i + 3] < 128) continue; r += d[i]; gg += d[i + 1]; b += d[i + 2]; n++;
       }
     }
     if (n) face.skin = `rgb(${(r / n) | 0},${(gg / n) | 0},${(b / n) | 0})`;
@@ -966,6 +1016,7 @@ function drawMark(m, R) {
     ctx.beginPath(); ctx.ellipse(x, y, R * 0.17, R * 0.12, 0, 0, TAU); ctx.stroke();
   }
 }
+const HL = 192, headLayer = mk(HL, HL), hudLayer = mk(56, 56);
 function drawOppHead(J) {
   const R = OD.headR, d = G.ko ? 1 : dmgRatio(), t = G.t;
   const tremble = O.state === 'idle' ? (0.6 + O.stage * 0.6) : 0;
@@ -981,9 +1032,12 @@ function drawOppHead(J) {
     ctx.fillStyle = 'rgba(220,60,60,0.35)'; ctx.beginPath(); ctx.arc(lx, ly, lr, 0, TAU); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.arc(lx - lr * 0.3, ly - lr * 0.3, lr * 0.25, 0, TAU); ctx.fill();
   }
-  ctx.save();
-  ctx.beginPath(); ctx.arc(0, 0, R, 0, TAU); ctx.clip();
   const wob = G.ko ? 1 : clamp((d - 0.78) / 0.22, 0, 1);
+  const lc = headLayer.getContext('2d');
+  lc.setTransform(1, 0, 0, 1, 0, 0); lc.clearRect(0, 0, HL, HL);
+  lc.setTransform(HL / (2 * R), 0, 0, HL / (2 * R), HL / 2, HL / 2);
+  ctx = lc;
+  ctx.save();
   drawFaceImg(face.canvas, R, wob);
   const gA = G.ko ? 0.9 : clamp((d - 0.35) / 0.6, 0, 1) * 0.75;
   if (gA > 0) { ctx.globalAlpha = gA; drawFaceImg(face.gray, R, wob); ctx.globalAlpha = 1; }
@@ -1048,21 +1102,24 @@ function drawOppHead(J) {
       ctx.stroke();
     }
   }
-  // sweat
-  if (d > 0.06 && !G.ko) {
-    ctx.fillStyle = 'rgba(160,215,255,0.9)';
-    teardrop(0.6 * R, -0.55 * R + ((t * 0.7) % 1) * 0.45 * R, R * 0.08);
-    if (d > 0.3) teardrop(-0.66 * R, -0.4 * R + ((t * 0.55 + 0.4) % 1) * 0.4 * R, R * 0.07);
-  }
   // cracks
   if (O.cracks) {
     ctx.strokeStyle = 'rgba(20,10,10,0.85)'; ctx.lineWidth = 2.5; ctx.lineJoin = 'miter';
     for (const pts of O.cracks) { ctx.beginPath(); pts.forEach(([u, v], i) => (i ? ctx.lineTo(u * R, v * R) : ctx.moveTo(u * R, v * R))); ctx.stroke(); }
   }
   if (O.hitFlash > 0) { ctx.fillStyle = `rgba(255,50,50,${O.hitFlash * 0.4})`; ctx.fillRect(-R, -R, 2 * R, 2 * R); }
+  // keep everything inside the head's own silhouette
+  ctx.globalCompositeOperation = 'destination-in';
+  drawFaceImg(face.canvas, R, wob);
   ctx.restore();
-  ctx.strokeStyle = '#120d1a'; ctx.lineWidth = 3.5;
-  ctx.beginPath(); ctx.arc(0, 0, R, 0, TAU); ctx.stroke();
+  ctx = mainCtx;
+  ctx.drawImage(headLayer, -R, -R, 2 * R, 2 * R);
+  // sweat
+  if (d > 0.06 && !G.ko) {
+    ctx.fillStyle = 'rgba(160,215,255,0.9)';
+    teardrop(0.6 * R, -0.55 * R + ((t * 0.7) % 1) * 0.45 * R, R * 0.08);
+    if (d > 0.3) teardrop(-0.66 * R, -0.4 * R + ((t * 0.55 + 0.4) % 1) * 0.4 * R, R * 0.07);
+  }
   ctx.restore();
   // dizzy stars
   if (d > 0.72 || O.state === 'down' || O.state === 'ko') {
@@ -1182,21 +1239,20 @@ function drawSoul() {
   ctx.beginPath(); ctx.arc(x, y, 28, Math.PI, 0);
   ctx.quadraticCurveTo(x + 28, y + 40, x + 6 + Math.sin(k * 8) * 10, y + 70);
   ctx.quadraticCurveTo(x - 10, y + 40, x - 28, y); ctx.closePath(); ctx.fill(); ctx.stroke();
-  ctx.save(); ctx.beginPath(); ctx.arc(x, y + 2, 19, 0, TAU); ctx.clip();
-  ctx.globalAlpha *= 0.65; ctx.drawImage(face.gray, x - 19, y - 17, 38, 38); ctx.restore();
+  ctx.globalAlpha *= 0.65; ctx.drawImage(face.gray, x - 19, y - 17, 38, 38);
   ctx.restore();
 }
 function drawHUD() {
   const bw = 330, bx = W - bw - 22, by = 26;
   // portrait
   const px = bx - 40, py = by + 14;
-  ctx.save(); ctx.beginPath(); ctx.arc(px, py, 28, 0, TAU); ctx.clip();
-  ctx.drawImage(face.canvas, px - 28, py - 28, 56, 56);
+  const hc = hudLayer.getContext('2d');
+  hc.clearRect(0, 0, 56, 56); hc.globalCompositeOperation = 'source-over';
+  hc.drawImage(face.canvas, 0, 0, 56, 56);
   const gA = G.ko ? 0.9 : clamp((dmgRatio() - 0.35) / 0.6, 0, 1) * 0.75;
-  if (gA > 0) { ctx.globalAlpha = gA; ctx.drawImage(face.gray, px - 28, py - 28, 56, 56); ctx.globalAlpha = 1; }
-  if (O.hitFlash > 0) { ctx.fillStyle = `rgba(255,40,40,${O.hitFlash * 0.5})`; ctx.fillRect(px - 28, py - 28, 56, 56); }
-  ctx.restore();
-  ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(px, py, 28, 0, TAU); ctx.stroke();
+  if (gA > 0) { hc.globalAlpha = gA; hc.drawImage(face.gray, 0, 0, 56, 56); hc.globalAlpha = 1; }
+  if (O.hitFlash > 0) { hc.globalCompositeOperation = 'source-atop'; hc.fillStyle = `rgba(255,40,40,${O.hitFlash * 0.5})`; hc.fillRect(0, 0, 56, 56); hc.globalCompositeOperation = 'source-over'; }
+  ctx.drawImage(hudLayer, px - 28, py - 28, 56, 56);
   ctx.textAlign = 'left';
   outlinedText(face.name, bx, by - 4, 20, '#fff', '#120d1a', 5);
   ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx - 3, by + 3, bw + 6, 24);
