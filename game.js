@@ -871,7 +871,9 @@ function shadow(x, h, w) {
 }
 
 function drawPlayer() {
-  const J = P.J, SK = '#d99a6c', SKD = '#b97e55', PANTS = '#2f3542', PANTSD = '#232833', TOP = '#2b6cb0';
+  // 經典格鬥家造型：白色道服（扯掉袖子）、黑帶、飄揚頭帶、綁手帶、赤腳
+  const J = P.J, SK = '#d99a6c', SKD = '#b97e55', GI = '#f4f1e8', GID = '#d6d1c4', BELT = '#16131c', BAND = '#e8a317', WRAP = '#efe9da';
+  const lerp2 = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
   const hand = (k, open, dark) => {
     const p = J[k], e = J[k === 'hF' ? 'eF' : 'eB'];
     if (open) {
@@ -882,34 +884,85 @@ function drawPlayer() {
       ctx.lineWidth = 1.5; for (const o of [-5, 0, 5]) { ctx.beginPath(); ctx.moveTo(10, o); ctx.lineTo(19, o * 1.3); ctx.stroke(); }
       ctx.restore();
     } else {
-      dot(p, 9, dark ? SKD : SK);
-      ctx.strokeStyle = '#f2f2f2'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(p[0], p[1], 6, 0, TAU); ctx.stroke();
+      dot(p, 10, dark ? GID : WRAP);
+      ctx.strokeStyle = 'rgba(18,13,26,0.45)'; ctx.lineWidth = 1.5;
+      for (const o of [-3.5, 3.5]) { ctx.beginPath(); ctx.arc(p[0], p[1], 10, Math.PI * 0.5 + o * 0.1 - 0.9, Math.PI * 0.5 + o * 0.1 + 0.9); ctx.stroke(); }
     }
+    // 手腕綁帶
+    seg(lerp2(e, p, 0.72), lerp2(e, p, 0.86), dark ? 12 : 13, dark ? GID : WRAP);
   };
-  seg(J.sh, J.eB, 13, SKD); seg(J.eB, J.hB, 12, SKD); hand('hB', P.open === 'B', true);
-  seg(J.hip, J.kB, 18, PANTSD); seg(J.kB, J.fB, 16, PANTSD); foot(J, 'fB', '#111');
-  // torso
-  seg(J.hip, J.neck, 30, TOP);
-  const tv = [J.neck[0] - J.hip[0], J.neck[1] - J.hip[1]];
-  seg([J.hip[0] + tv[0] * 0.02, J.hip[1] + tv[1] * 0.02], [J.hip[0] + tv[0] * 0.12, J.hip[1] + tv[1] * 0.12], 30, '#111');
-  ctx.fillStyle = '#ffd23f'; ctx.font = `900 12px ${FONT}`; ctx.textAlign = 'center';
-  ctx.fillText('怒', J.hip[0] + tv[0] * 0.55, J.hip[1] + tv[1] * 0.55 + 4);
-  seg(J.hip, J.kF, 18, PANTS); seg(J.kF, J.fF, 16, PANTS); foot(J, 'fF', '#111');
-  seg(J.sh, J.eF, 14, SK); seg(J.eF, J.hF, 13, SK); hand('hF', P.open === 'F', false);
+  const arm = (e, h, dark) => {
+    seg(J.sh, J[e], dark ? 13 : 14, dark ? SKD : SK);
+    seg(J.sh, lerp2(J.sh, J[e], 0.32), dark ? 18 : 19, dark ? GID : GI); // 破袖口
+    seg(J[e], J[h], dark ? 12 : 13, dark ? SKD : SK);
+  };
+  const leg = (k, f, back) => {
+    const col = back ? GID : GI;
+    seg(J.hip, J[k], 20, col); seg(J[k], lerp2(J[k], J[f], 0.82), 19, col);
+    // 赤腳
+    const p = J[f], v = J.footVec;
+    seg(lerp2(J[k], p, 0.8), p, 10, back ? SKD : SK);
+    seg(p, [p[0] + v[0] * 13, p[1] + v[1] * 13], 9, back ? SKD : SK);
+  };
+  arm('eB', 'hB', true); hand('hB', P.open === 'B', true);
+  leg('kB', 'fB', true);
+  // 道服上衣
+  seg(J.hip, J.neck, 32, GI);
+  const tv = [J.neck[0] - J.hip[0], J.neck[1] - J.hip[1]], tl = Math.hypot(tv[0], tv[1]) || 1;
+  const ux = tv[0] / tl, uy = tv[1] / tl, nx = -uy * P.f, ny = ux * P.f;
+  const at = (k, side) => [J.hip[0] + tv[0] * k + nx * side, J.hip[1] + tv[1] * k + ny * side];
+  // 交領：露出胸口的 V 字
+  ctx.fillStyle = SK; ctx.strokeStyle = '#120d1a'; ctx.lineWidth = 2;
+  const n1 = at(1.02, -9), n2 = at(1.02, 10), v0 = at(0.5, 2);
+  ctx.beginPath(); ctx.moveTo(n1[0], n1[1]); ctx.lineTo(n2[0], n2[1]); ctx.lineTo(v0[0], v0[1]); ctx.closePath(); ctx.fill();
+  ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(n1[0], n1[1]); ctx.lineTo(v0[0], v0[1]); ctx.lineTo(at(0.18, -12)[0], at(0.18, -12)[1]); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(n2[0], n2[1]); ctx.lineTo(v0[0], v0[1]); ctx.stroke();
+  // 黑帶 + 飄動的帶尾
+  { const a = at(0.13, 0), b = at(0.22, 0); ctx.lineCap = 'butt';
+    ctx.strokeStyle = '#120d1a'; ctx.lineWidth = 36; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+    ctx.strokeStyle = BELT; ctx.lineWidth = 33; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+  const knot = at(0.175, 8), sw = Math.sin(G.t * 9) * 4, run = -P.f * (P.air ? 6 : 0);
+  ctx.strokeStyle = BELT; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  for (const [dx, len] of [[-3, 22], [4, 18]]) {
+    ctx.beginPath(); ctx.moveTo(knot[0], knot[1]);
+    ctx.quadraticCurveTo(knot[0] + dx + run, knot[1] + len * 0.6, knot[0] + dx * 1.6 + sw + run * 2, knot[1] + len); ctx.stroke();
+  }
+  leg('kF', 'fF', false);
+  arm('eF', 'hF', false); hand('hF', P.open === 'F', false);
   // head
   const r = PD.headR;
   ctx.save(); ctx.translate(J.head[0], J.head[1]); ctx.rotate(J.headAngle); ctx.scale(P.f, 1);
+  // 頭帶尾巴（畫在頭後面，隨風飄）
+  const t = G.t * 10, lift = (P.air || P.act) ? 0.35 : 0;
+  ctx.strokeStyle = '#120d1a'; ctx.lineCap = 'round';
+  for (const [i, L] of [[0, 34], [1, 28]]) {
+    const pts = [];
+    for (let k = 0; k <= 6; k++) {
+      const q = k / 6;
+      pts.push([-r * 0.85 - q * L, -r * 0.42 + q * L * (0.35 - lift + i * 0.25) + Math.sin(t + q * 4 + i) * 5 * q]);
+    }
+    for (const [lw, col] of [[9, '#120d1a'], [5.5, BAND]]) {
+      ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+      for (const pt of pts) ctx.lineTo(pt[0], pt[1]); ctx.stroke();
+    }
+  }
   ctx.fillStyle = '#15121f'; ctx.strokeStyle = '#120d1a'; ctx.lineWidth = 2.5;
   ctx.beginPath();
-  const spikes = [[-1.1, -0.1], [-1.5, -0.6], [-0.8, -0.75], [-1.0, -1.4], [-0.25, -1.0], [0.1, -1.55], [0.45, -0.95], [1.0, -1.05], [0.95, -0.35]];
+  const spikes = [[-1.1, -0.1], [-1.4, -0.55], [-0.85, -0.75], [-0.95, -1.3], [-0.3, -1.0], [0.05, -1.4], [0.45, -0.95], [0.95, -1.0], [0.95, -0.35]];
   ctx.moveTo(spikes[0][0] * r, spikes[0][1] * r); for (const [sx, sy] of spikes) ctx.lineTo(sx * r, sy * r); ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.fillStyle = SK; ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill(); ctx.stroke();
   ctx.fillStyle = '#15121f'; ctx.beginPath(); ctx.arc(0, 0, r, Math.PI * 1.02, Math.PI * 1.9); ctx.lineTo(-r * 0.3, -r * 0.35); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = SKD; ctx.beginPath(); ctx.arc(-r * 0.15, 0, r * 0.22, 0, TAU); ctx.fill();
-  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(r * 0.5, -r * 0.08, r * 0.22, r * 0.13, 0, 0, TAU); ctx.fill();
-  ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(r * 0.6, -r * 0.06, r * 0.08, 0, TAU); ctx.fill();
+  // 頭帶
+  ctx.save(); ctx.beginPath(); ctx.arc(0, 0, r + 1, 0, TAU); ctx.clip();
+  ctx.fillStyle = BAND; ctx.beginPath(); ctx.moveTo(-r * 1.1, -r * 0.58); ctx.lineTo(r * 1.1, -r * 0.52); ctx.lineTo(r * 1.1, -r * 0.24); ctx.lineTo(-r * 1.1, -r * 0.28); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#120d1a'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = BAND; ctx.strokeStyle = '#120d1a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(-r * 0.88, -r * 0.42, 4.5, 0, TAU); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = SKD; ctx.beginPath(); ctx.arc(-r * 0.15, 0.1 * r, r * 0.2, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(r * 0.5, -r * 0.04, r * 0.22, r * 0.12, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(r * 0.6, -r * 0.02, r * 0.08, 0, TAU); ctx.fill();
   ctx.strokeStyle = '#111'; ctx.lineWidth = 4; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(r * 0.18, -r * 0.42); ctx.lineTo(r * 0.8, -r * 0.2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(r * 0.22, -r * 0.2); ctx.lineTo(r * 0.82, -r * 0.12); ctx.stroke();
   if (P.act || G.ko) { ctx.fillStyle = '#4a1010'; ctx.beginPath(); ctx.ellipse(r * 0.58, r * 0.45, r * 0.2, r * 0.15, 0, 0, TAU); ctx.fill(); }
   else { ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(r * 0.38, r * 0.48); ctx.lineTo(r * 0.78, r * 0.4); ctx.stroke(); }
   ctx.restore();
