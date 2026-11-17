@@ -208,6 +208,9 @@ const GRAB        = [0.25, 0.0, 1.3, 0.3, 1.45, 0.2, -0.45, -0.1, 0.45, -0.4];
 const LIFT        = [-0.3, -0.3, 3.0, 0.1, 3.1, 0.05, -0.3, -0.2, 0.4, -0.4];
 const SLAM        = [-0.45, -0.2, 4.1, 0.2, 4.2, 0.1, -0.2, -0.3, 0.6, -0.6];
 const PILE_LAND   = [0.3, 0.2, 2.2, 0.4, 2.3, 0.3, -0.9, -0.9, 1.2, -2.0];
+const JUMP        = [0.15, -0.15, 2.3, 0.9, 2.0, 1.0, 0.5, -1.7, 1.3, -1.9];
+const FALL        = [0.05, -0.05, 1.9, 0.7, 1.7, 0.8, 0.1, -0.6, 0.7, -0.9];
+const CROUCH      = [0.45, -0.3, 0.7, 1.9, 1.1, 1.7, 0.9, -2.0, 1.35, -2.25];
 const VICTORY     = [0.0, -0.25, 0.4, 0.5, 3.0, 0.2, -0.2, 0.0, 0.2, 0.0];
 // opponent
 const COWER  = [-0.15, 0.15, 0.5, 2.3, 0.7, 2.2, -0.1, -0.15, 0.2, -0.35];
@@ -295,7 +298,7 @@ function resetGame() {
     particles: [], texts: [], bubble: null, bubbleCD: 1.5, ko: false, koT: 0, endShown: false, flash: 0, dim: 0,
     banner: null, hist: [], stringCut: -1, bar: { x: 660, v: 0 }, startTime: performance.now(), sobCD: 2,
   });
-  Object.assign(P, { x: 300, h: 0, f: 1, act: null, queue: null, pose: STANCE.slice(), walkPh: 0, bodyRot: 0, hold: null, open: null, J: null });
+  Object.assign(P, { x: 300, h: 0, vy: 0, air: false, crouch: false, f: 1, act: null, queue: null, pose: STANCE.slice(), walkPh: 0, bodyRot: 0, hold: null, open: null, J: null });
   Object.assign(O, {
     x: 660, h: 0, vx: 0, vy: 0, f: -1, state: 'idle', st: 0, maxHp: 150, hp: 150, ghostHp: 150, stage: 0,
     headRot: 0, headRotV: 0, squash: 0, hitFlash: 0, marks: [], lumps: [], cracks: null, pose: COWER.slice(),
@@ -344,11 +347,20 @@ function solveBody(E, D) {
 }
 
 /* ------------------------------------------------------------------ input */
-const held = { left: false, right: false };
+const held = { left: false, right: false, up: false, down: false };
+const JUMP_V = 1050;
+function jump() {
+  if (!G.running || G.ko || P.air || P.act) return;
+  audio();
+  P.air = true; P.vy = JUMP_V; P.h = Math.max(P.h, 1); P.crouch = false;
+  SFX.whoosh();
+}
+const groundOnly = name => name === 'throw' || name === 'pile' || name === 'chain' || name === 'ultimate';
 function press(btn) {
   if (!G.running || G.ko) return;
   audio();
-  if (P.act) {
+  if (P.act || (P.air && btn === 'throw')) {
+    if (!P.act) { P.queue = btn; return; }
     if (!P.act.m.ultimate && P.act.t > P.act.m.dur * 0.45) P.queue = btn;
     return;
   }
@@ -370,10 +382,15 @@ function doPress(btn) {
       if (hit) { name = hit.move; G.hist = []; }
     }
   }
+  if (P.air && groundOnly(name)) { // grabs and the chain need solid ground: fire on landing
+    if (name === 'ultimate') G.meter = 100;
+    P.queue = btn; return;
+  }
   startMove(name);
 }
 function startMove(name) {
   const m = MOVES[name];
+  P.crouch = false;
   P.f = Math.sign(O.x - P.x) || P.f;
   P.act = { name, m, t: 0, hi: 0, checked: false, grabbed: false, done: false };
   if (m.title) G.banner = { text: m.title, t: 0, ult: !!m.ultimate };
@@ -506,8 +523,20 @@ function triggerKO(dir) {
 }
 
 /* ------------------------------------------------------------------ update */
+function airPhysics(dt, steer) {
+  if (!P.air) return false;
+  P.vy -= GRAV * 1.6 * dt; P.h += P.vy * dt;
+  if (steer) P.x += steer * 300 * dt;
+  if (P.h <= 0) {
+    P.h = 0; P.vy = 0; P.air = false;
+    for (let i = 0; i < 6; i++) G.particles.push({ type: 'dust', x: P.x + rand(-30, 30), y: GY + rand(-4, 4), vx: rand(-120, 120), vy: rand(-60, -10), life: rand(0.3, 0.5), t: 0, size: rand(6, 12) });
+    return true;
+  }
+  return false;
+}
 function updatePlayer(dt) {
   const A = P.act;
+  const mv = (held.right ? 1 : 0) - (held.left ? 1 : 0);
   if (A) {
     const m = A.m;
     A.t += dt;
@@ -517,6 +546,8 @@ function updatePlayer(dt) {
       P.x += clamp(tx - P.x, -1600 * dt, 1600 * dt);
       const t = A.t;
       P.h = t < 1.45 ? 0 : t < 1.85 ? 270 * easeOut((t - 1.45) / 0.4) : t < 2.25 ? 270 * (1 - Math.pow((t - 1.85) / 0.4, 2)) : 0;
+    } else if (m.hits && P.air) {
+      airPhysics(dt, G.ko ? 0 : mv * 0.6);
     } else if (m.hits) {
       if (A.t < m.hits[0].t + 0.02) {
         const tx = O.x - f * (m.reach - 12), d = tx - P.x;
@@ -538,16 +569,27 @@ function updatePlayer(dt) {
       updateGrab(A, m);
     }
     if (A.t >= m.dur) {
-      P.act = null; P.h = 0;
+      P.act = null; if (!P.air) P.h = 0;
       if (O.state === 'grabbed') { O.state = 'idle'; O.hold = null; O.bodyRot = 0; }
       if (P.queue && !G.ko) { const q = P.queue; P.queue = null; doPress(q); }
       P.queue = null;
     }
   } else {
     P.open = null;
+    if (P.air) {
+      const landed = airPhysics(dt, G.ko ? 0 : mv);
+      P.pose = lerpPose(P.pose, P.vy > 0 ? JUMP : FALL, 1 - Math.exp(-dt * 14));
+      if (landed && P.queue && !G.ko) { const q = P.queue; P.queue = null; doPress(q); }
+    } else {
     P.h = 0;
-    const mv = (held.right ? 1 : 0) - (held.left ? 1 : 0);
-    if (!G.ko && mv) {
+    if (held.up && !G.ko) jump();
+    P.crouch = !G.ko && !P.air && held.down;
+    if (P.air) { /* just jumped */ }
+    else if (P.crouch) {
+      const s = CROUCH.slice(); s[0] += Math.sin(G.t * 5) * 0.03;
+      P.pose = lerpPose(P.pose, s, 1 - Math.exp(-dt * 20));
+      if (mv) P.x += mv * 110 * dt;
+    } else if (!G.ko && mv) {
       P.x += mv * 260 * dt;
       P.walkPh += dt * 11 * mv * P.f;
       const s = Math.sin(P.walkPh);
@@ -561,6 +603,7 @@ function updatePlayer(dt) {
       const b = Math.sin(G.t * 5);
       const s = STANCE.slice(); s[0] += b * 0.03; s[7] -= b * 0.05; s[9] -= b * 0.06;
       P.pose = lerpPose(P.pose, s, 1 - Math.exp(-dt * 18));
+    }
     }
     if (O.state !== 'grabbed') P.f = Math.sign(O.x - P.x) || P.f;
   }
@@ -1344,21 +1387,24 @@ $('#btn-voice').addEventListener('click', e => {
 });
 
 // keyboard
-const KEYMAP = { KeyJ: 'slap', KeyK: 'punch', KeyL: 'kick', KeyI: 'throw', KeyU: 'chain', Space: 'chain', KeyZ: 'slap', KeyX: 'punch', KeyC: 'kick', KeyV: 'throw', KeyB: 'chain' };
+// arrows (right hand) move / jump / crouch; attacks live on the left side of the keyboard
+const KEYMAP = { KeyA: 'slap', KeyS: 'punch', KeyD: 'kick', KeyF: 'throw', KeyG: 'chain', Space: 'chain', KeyZ: 'slap', KeyX: 'punch', KeyC: 'kick', KeyV: 'throw', KeyB: 'chain' };
+const DIRS = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
 addEventListener('keydown', e => {
   if (e.target instanceof HTMLInputElement) return;
-  if (e.code === 'ArrowLeft' || e.code === 'KeyA') { held.left = true; e.preventDefault(); }
-  else if (e.code === 'ArrowRight' || e.code === 'KeyD') { held.right = true; e.preventDefault(); }
-  else if (KEYMAP[e.code]) {
+  if (DIRS[e.code]) {
+    e.preventDefault();
+    held[DIRS[e.code]] = true;
+    if (e.code === 'ArrowUp' && !e.repeat) jump();
+  } else if (KEYMAP[e.code]) {
     e.preventDefault();
     if (!e.repeat) press(KEYMAP[e.code]);
   }
 });
 addEventListener('keyup', e => {
-  if (e.code === 'ArrowLeft' || e.code === 'KeyA') held.left = false;
-  if (e.code === 'ArrowRight' || e.code === 'KeyD') held.right = false;
+  if (DIRS[e.code]) held[DIRS[e.code]] = false;
 });
-addEventListener('blur', () => { held.left = held.right = false; });
+addEventListener('blur', () => { held.left = held.right = held.up = held.down = false; });
 
 // touch buttons
 document.querySelectorAll('[data-btn]').forEach(b => {
@@ -1369,7 +1415,7 @@ document.querySelectorAll('[data-btn]').forEach(b => {
 });
 document.querySelectorAll('[data-hold]').forEach(b => {
   const k = b.dataset.hold;
-  b.addEventListener('pointerdown', e => { e.preventDefault(); b.setPointerCapture(e.pointerId); held[k] = true; b.classList.add('pressed'); });
+  b.addEventListener('pointerdown', e => { e.preventDefault(); b.setPointerCapture(e.pointerId); held[k] = true; if (k === 'up') jump(); b.classList.add('pressed'); });
   const up = () => { held[k] = false; b.classList.remove('pressed'); };
   b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('lostpointercapture', up);
   b.addEventListener('contextmenu', e => e.preventDefault());
