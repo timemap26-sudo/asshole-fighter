@@ -14,28 +14,30 @@
   <div id="stage"><canvas id="game"></canvas></div>
 
   <div id="controls">
-    <div class="pad-move">
-      <button data-hold="left" aria-label="左移">◀</button>
-      <button data-hold="right" aria-label="右移">▶</button>
-    </div>
     <div class="pad-atk">
-      <button data-btn="slap" class="b-slap">巴掌<small>J</small></button>
-      <button data-btn="punch" class="b-punch">拳頭<small>K</small></button>
-      <button data-btn="kick" class="b-kick">踢腿<small>L</small></button>
-      <button data-btn="throw" class="b-throw">過肩摔<small>I</small></button>
-      <button data-btn="chain" class="b-chain" id="btn-chain">連環技<small>U / 空白</small></button>
+      <button data-btn="slap" class="b-slap">巴掌<small>A</small></button>
+      <button data-btn="punch" class="b-punch">拳頭<small>S</small></button>
+      <button data-btn="kick" class="b-kick">踢腿<small>D</small></button>
+      <button data-btn="throw" class="b-throw">過肩摔<small>F</small></button>
+      <button data-btn="chain" class="b-chain" id="btn-chain">連環技<small>G / 空白</small></button>
+    </div>
+    <div class="pad-move">
+      <button data-hold="left" aria-label="左移" class="d-left">◀</button>
+      <button data-hold="up" aria-label="跳" class="d-up">▲</button>
+      <button data-hold="down" aria-label="蹲" class="d-down">▼</button>
+      <button data-hold="right" aria-label="右移" class="d-right">▶</button>
     </div>
   </div>
 
   <div id="help">
     <div class="combos">
       <b>連環技指令</b>
-      <span><kbd>J</kbd><kbd>J</kbd><kbd>J</kbd> 連環巴掌</span>
-      <span><kbd>K</kbd><kbd>K</kbd><kbd>K</kbd> 百裂拳</span>
-      <span><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> 沖天拳</span>
-      <span><kbd>L</kbd><kbd>L</kbd><kbd>I</kbd> 地獄摔</span>
-      <span><kbd>U</kbd> 連環技・怒氣滿時變<b class="hot">終極連環技</b></span>
-      <span><kbd>A</kbd><kbd>D</kbd> / <kbd>←</kbd><kbd>→</kbd> 移動</span>
+      <span><kbd>A</kbd><kbd>A</kbd><kbd>A</kbd> 連環巴掌</span>
+      <span><kbd>S</kbd><kbd>S</kbd><kbd>S</kbd> 百裂拳</span>
+      <span><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 沖天拳</span>
+      <span><kbd>D</kbd><kbd>D</kbd><kbd>F</kbd> 地獄摔</span>
+      <span><kbd>G</kbd> / <kbd>空白</kbd> 連環技・怒氣滿時變<b class="hot">終極連環技</b></span>
+      <span><kbd>←</kbd><kbd>→</kbd> 移動・<kbd>↑</kbd> 跳(可跳過對手)・<kbd>↓</kbd> 蹲</span>
     </div>
     <div class="opts">
       <button id="btn-voice">🔊 求饒語音:開</button>
@@ -50,7 +52,7 @@
     <p class="sub">上傳那個人的大頭照,他就會變成任你處置的魁儡。<br>他不會還手,只會一直求饒…直到徹底崩潰。</p>
     <div class="editor-wrap">
       <canvas id="editor" width="560" height="560"></canvas>
-      <div class="hint">上傳後自動把<b>眼睛</b>和<b>嘴巴</b>對準黃色虛線<br>不準可拖曳移動・滾輪 / 雙指縮放微調</div>
+      <div class="hint">上傳後自動把<b>眼睛</b>和<b>嘴巴</b>對準記號<br>背景會自動去掉<br>不準可拖曳移動・滾輪 / 雙指縮放微調</div>
     </div>
     <label class="upload">📷 上傳大頭照<input type="file" id="file" accept="image/*"></label>
     <div id="align-status">上傳後會自動對齊臉部</div>
