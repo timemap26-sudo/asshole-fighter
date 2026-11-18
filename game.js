@@ -239,6 +239,7 @@ function finalizeFace() {
   const x = face.canvas.getContext('2d');
   x.clearRect(0, 0, FS, FS);
   drawSource(x, FS / 2, FS / 2, FS / (2 * ER));
+  face.photo = !!ed.img;
   const g = face.gray.getContext('2d');
   g.clearRect(0, 0, FS, FS);
   try {
@@ -340,6 +341,7 @@ const MOVES = {
   throw: { dur: 1.0, reach: 64, grab: 'throw', frames: [[0, STANCE], [0.15, GRAB], [0.45, LIFT], [0.75, SLAM], [1.0, STANCE]] },
   slapRush: { title: '連環巴掌', dur: 1.0, reach: 72, hits: [] },
   punchRush: { title: '百裂拳', dur: 1.05, reach: 84, hits: [] },
+  uppercut: { title: '下鉤拳', dur: 0.62, reach: 86, hits: [HIT(0.16, 'upper', 12, 560, { ky: 1250, stun: 0.6 })] },
   rising: { title: '沖天拳', dur: 0.8, reach: 84, hits: [HIT(0.2, 'upper', 11, 90, { ky: 880, stun: 0.6 })] },
   pile: { title: '地獄摔', dur: 1.45, reach: 66, grab: 'pile', frames: [[0, STANCE], [0.15, GRAB], [0.45, LIFT], [0.7, LIFT], [0.92, PILE_LAND], [1.45, STANCE]] },
   chain: { title: '連環技', dur: 1.15, reach: 80, hits: [
@@ -474,6 +476,8 @@ function doPress(btn) {
       const hit = SEQS.find(q => q.seq === s);
       if (hit) { name = hit.move; G.hist = []; }
     }
+    // ↓ + punch on the ground: an uppercut that sends him flying
+    if (name === 'punch' && held.down && !P.air) { name = 'uppercut'; G.hist = []; }
   }
   if (P.air && groundOnly(name)) { // grabs and the chain need solid ground: fire on landing
     if (name === 'ultimate') G.meter = 100;
@@ -1154,11 +1158,14 @@ function drawOppHead(J) {
   drawFaceImg(face.canvas, R, wob, warp);
   const gA = G.ko ? 0.25 : clamp((d - 0.35) / 0.6, 0, 1) * 0.22;
   if (gA > 0) { ctx.globalAlpha = gA; drawFaceImg(face.gray, R, wob, warp); ctx.globalAlpha = 1; }
+  if (d > 0.6) { ctx.fillStyle = `rgba(110,170,110,${(d - 0.6) * 0.18})`; ctx.fillRect(-R, -R, 2 * R, 2 * R); }
+  // a photo's eyes/mouth were aligned to the shrunken guide (ft), not the full crop:
+  // draw every facial overlay in those template coords so black eyes land on the eyes
+  if (face.photo) { ctx.translate(0, FT_DY * R); ctx.scale(FT_S, FT_S); }
   // marks pile up, so fade each one as the count grows — the photo must stay readable
   ctx.globalAlpha = 0.7 * Math.min(1, 5 / Math.max(5, O.marks.length));
   for (const m of O.marks) drawMark(m, R);
   ctx.globalAlpha = 1;
-  if (d > 0.6) { ctx.fillStyle = `rgba(110,170,110,${(d - 0.6) * 0.18})`; ctx.fillRect(-R, -R, 2 * R, 2 * R); }
   // flushed, puffy cheeks — redder and wider the more it hurts
   if (d > 0.12) {
     const a = Math.min(1, (d - 0.12) * 1.6), cr = R * (0.2 + d * 0.12);
@@ -1302,8 +1309,8 @@ function drawOppHead(J) {
     ctx.strokeStyle = 'rgba(20,10,10,0.85)'; ctx.lineWidth = 2.5; ctx.lineJoin = 'miter';
     for (const pts of O.cracks) { ctx.beginPath(); pts.forEach(([u, v], i) => (i ? ctx.lineTo(u * R, v * R) : ctx.moveTo(u * R, v * R))); ctx.stroke(); }
   }
-  if (O.hitFlash > 0) { ctx.fillStyle = `rgba(255,50,50,${O.hitFlash * 0.4})`; ctx.fillRect(-R, -R, 2 * R, 2 * R); }
   ctx.restore();
+  if (O.hitFlash > 0) { ctx.fillStyle = `rgba(255,50,50,${O.hitFlash * 0.4})`; ctx.fillRect(-R, -R, 2 * R, 2 * R); }
   // keep everything inside the head's own silhouette. The wobbly face is drawn in slices,
   // so build the mask on its own layer first: destination-in per slice would erase the
   // slices drawn before it and the whole head would vanish.
