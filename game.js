@@ -116,7 +116,7 @@ const END_SUB = ['他現在只想回家找媽媽。', '他的自尊心已經碎�
 /* ------------------------------------------------------------------ face */
 const FS = 256;
 const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
-const face = { canvas: mk(FS, FS), gray: mk(FS, FS), skin: '#e8b88f', name: '那個混蛋' };
+const face = { canvas: mk(FS, FS), gray: mk(FS, FS), skin: '#e8b88f', name: '那個混蛋', mouth: { u: 0, v: 0.45 } };
 const defaultFace = mk(FS, FS);
 (function drawDefault() {
   const x = defaultFace.getContext('2d'), c = FS / 2, R = FS / 2;
@@ -138,7 +138,7 @@ const defaultFace = mk(FS, FS);
 })();
 
 /* face editor */
-const ed = { img: null, zoom: 1, rot: 0, ox: 0, oy: 0 };
+const ed = { img: null, zoom: 1, rot: 0, ox: 0, oy: 0, feat: null }; // feat: detected eyes/mouth (image px)
 const edC = $('#editor'), edX = edC.getContext('2d');
 const ES = edC.width, ER = ES * 0.42;
 const ZMIN = 0.3, ZMAX = 12;
@@ -240,6 +240,16 @@ function finalizeFace() {
   x.clearRect(0, 0, FS, FS);
   drawSource(x, FS / 2, FS / 2, FS / (2 * ER));
   face.photo = !!ed.img;
+  // put the drawn mouth where the photo's real mouth ended up (follows manual tweaks too)
+  face.mouth = { u: 0, v: 0.45 };
+  if (ed.img && ed.feat) {
+    const img = ed.img, iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    const s = (2 * ER / Math.min(iw, ih)) * ed.zoom, cos = Math.cos(ed.rot), sin = Math.sin(ed.rot);
+    const px = ed.feat.mouth.x - iw / 2, py = ed.feat.mouth.y - ih / 2;
+    const cx = ((cos * px - sin * py) * s + ed.ox) / ER, cy = ((sin * px + cos * py) * s + ed.oy) / ER;
+    const u = cx / FT_S, v = (cy - FT_DY) / FT_S;
+    if (Math.abs(u) < 0.4 && v > 0.15 && v < 0.85) face.mouth = { u, v }; // ignore if it's clearly off the face
+  }
   const g = face.gray.getContext('2d');
   g.clearRect(0, 0, FS, FS);
   try {
@@ -349,7 +359,7 @@ const MOVES = {
   slap:  { dur: 0.32, reach: 72, hits: [HIT(0.13, 'slap', 4, 140)] },
   punch: { dur: 0.32, reach: 84, hits: [HIT(0.11, 'punch', 6, 240)] },
   kick:  { dur: 0.46, reach: 110, hits: [HIT(0.19, 'kick', 8, 430, { stun: 0.55 })] },
-  throw: { dur: 1.15, reach: 64, grab: 'throw', frames: [[0, STANCE], [0.15, GRAB], [0.3, SEOI_PULL], [0.45, SEOI_LOAD], [0.6, SEOI_LOAD], [0.85, SEOI_TOSS], [1.15, STANCE]] },
+  throw: { dur: 1.75, reach: 64, grab: 'throw', frames: [[0, STANCE], [0.15, GRAB], [0.3, SEOI_PULL], [0.45, SEOI_LOAD], [0.6, SEOI_LOAD], [0.8, SEOI_TOSS], [1.45, SEOI_TOSS], [1.75, STANCE]] },
   slapRush: { title: '連環巴掌', dur: 1.0, reach: 72, hits: [] },
   punchRush: { title: '百裂拳', dur: 1.05, reach: 84, hits: [] },
   uppercut: { title: '下鉤拳', dur: 0.62, reach: 86, hits: [HIT(0.16, 'upper', 12, 560, { ky: 1250, stun: 0.6 })] },
@@ -787,6 +797,7 @@ function lyingShoulder(x) {
   Object.assign(O, { x: save.x, h: save.h, hold: save.hold, bodyRot: save.rot, pose: save.pose });
   return sh;
 }
+const THROW_LAND = 1.45; // when the 過肩摔 victim hits the floor
 /* 過肩摔 (seoi-nage): grab his wrist, pull, turn your back, load him over your shoulder, flip him to the other side */
 /* pulled in by the wrist, stumbling toward you */
 function pullIn(A) {
@@ -853,18 +864,21 @@ function seoiNage(A, t) {
   if (t < 0.45) {
     const k = ease((t - 0.3) / 0.15);
     S = mix2(A.s0, shTop, k); rot = lerp(-0.25, 0.5, k);
-  } else if (t < 0.85) {
-    const u = (t - 0.45) / 0.4;
-    rot = 0.5 + (Math.PI * 1.5 - 0.5) * ease(u);
-    const ground = lyingShoulder(A.landX), k2 = ease(clamp((u - 0.55) / 0.45, 0, 1));
+  } else if (t < THROW_LAND) {
+    // long flight: flung up off the shoulder, hangs in the air spinning, then crashes down
+    const u = (t - 0.45) / (THROW_LAND - 0.45);
+    rot = 0.5 + (Math.PI * 1.5 - 0.5) * (u < 0.5 ? ease(u / 0.5) * 0.75 : 0.75 + 0.25 * ease((u - 0.5) / 0.5));
+    const ground = lyingShoulder(A.landX), k2 = ease(clamp((u - 0.15) / 0.85, 0, 1));
     S = mix2(shTop, ground, k2);
-    body = lerpPose(body, LYING, k2);
+    S[1] -= 190 * Math.sin(Math.PI * Math.min(1, u * 1.08)); // up in the air
+    body = lerpPose(body, LYING, ease(clamp((u - 0.6) / 0.4, 0, 1)));
+    A.released = u >= 0.2;
   }
-  if (t < 0.85) {
+  if (t < THROW_LAND) {
     O.bodyRot = rot;
     O.pose = body;
     hangFromShoulder(O, OD, S);
-    reachArm(O, OD, S, P.J.hF);
+    if (!A.released) reachArm(O, OD, S, P.J.hF); // let go of his wrist once he's flying
     return;
   }
   // slam — flat on his back on the far side, head toward you
@@ -1264,17 +1278,18 @@ function drawOpp() {
 
 // warp: 0..1 — the photo itself gets squashed out of shape (pinched forehead/chin,
 // puffed lopsided cheeks, sagging jaw) so the face stays recognisable, just mangled.
+// the battered-face distortion, per image row k (0 = top, 1 = bottom of the head square)
+const warpFy = (k, warp) => k + warp * 0.1 * Math.sin(Math.PI * k) * (1 - k * 0.6);
+const warpW = (v, warp) => 1 - warp * 0.24 * (1 - Math.exp(-(((v - 0.62) / 0.2) ** 2)));
+const warpOff = (v, wob, warp) => Math.sin(G.t * 14 + v * 21.6) * wob * 0.09
+  + warp * (0.08 * Math.sin(v * Math.PI * 2.2 + 0.6) + 0.02 * Math.sin(G.t * 3 + v * 6));
 function drawFaceImg(src, R, wob, warp = 0) {
   if (wob > 0.01 || warp > 0.01) {
     const N = 64, sh = FS / N;
-    const fy = (k) => k + warp * 0.1 * Math.sin(Math.PI * k) * (1 - k * 0.6);
     for (let i = 0; i < N; i++) {
       const v = (i + 0.5) / N;
-      const y0 = (fy(i / N) * 2 - 1) * R, y1 = (fy((i + 1) / N) * 2 - 1) * R;
-      const puff = Math.exp(-(((v - 0.62) / 0.2) ** 2));
-      const w = 2 * R * (1 - warp * 0.24 * (1 - puff));
-      const off = Math.sin(G.t * 14 + v * 21.6) * wob * R * 0.09
-        + warp * R * (0.08 * Math.sin(v * Math.PI * 2.2 + 0.6) + 0.02 * Math.sin(G.t * 3 + v * 6));
+      const y0 = (warpFy(i / N, warp) * 2 - 1) * R, y1 = (warpFy((i + 1) / N, warp) * 2 - 1) * R;
+      const w = 2 * R * warpW(v, warp), off = warpOff(v, wob, warp) * R;
       ctx.drawImage(src, 0, i * sh, FS, sh, -w / 2 + off, y0, w, y1 - y0 + 0.6);
     }
   } else ctx.drawImage(src, -R, -R, 2 * R, 2 * R);
@@ -1333,6 +1348,16 @@ function drawOppHead(J) {
   // a photo's eyes/mouth were aligned to the shrunken guide (ft), not the full crop:
   // draw every facial overlay in those template coords so black eyes land on the eyes
   if (face.photo) { ctx.translate(0, FT_DY * R); ctx.scale(FT_S, FT_S); }
+  // follow the photo's distortion: (u,v) in overlay units -> [u', v', width factor]
+  const onFace = (u, v) => {
+    const ps = face.photo ? FT_S : 1, pd = face.photo ? FT_DY : 0;
+    const hx = u * ps, hy = v * ps + pd, k = (hy + 1) / 2;
+    if (wob <= 0.01 && warp <= 0.01) return [u, v, 1];
+    const wf = warpW(k, warp), x = hx * wf + warpOff(k, wob, warp), y = warpFy(k, warp) * 2 - 1;
+    return [x / ps, (y - pd) / ps, wf];
+  };
+  // vI: top-lip line of the hurt mouth (it opens downward), vW: centre of the wailing mouth
+  const mouth = face.photo ? { u: face.mouth.u, vI: face.mouth.v - 0.05, vW: face.mouth.v } : { u: 0, vI: 0.5, vW: 0.46 };
   // marks pile up, so fade each one as the count grows — the photo must stay readable
   ctx.globalAlpha = 0.7 * Math.min(1, 5 / Math.max(5, O.marks.length));
   for (const m of O.marks) drawMark(m, R);
@@ -1358,7 +1383,8 @@ function drawOppHead(J) {
   }
   // the eye that took the punches swells shut bit by bit
   if (d > 0.3) {
-    const k = Math.min(1, (d - 0.3) / 0.5), ex = -0.32 * R, ey = -0.1 * R;
+    const [eu, ev] = onFace(-0.32, -0.1);
+    const k = Math.min(1, (d - 0.3) / 0.5), ex = eu * R, ey = ev * R;
     ctx.save();
     ctx.beginPath(); ctx.ellipse(ex, ey - 0.02 * R, R * (0.17 + 0.07 * k), R * (0.1 + 0.1 * k), 0, 0, TAU);
     const g = ctx.createRadialGradient(ex, ey - 0.05 * R, 0, ex, ey, R * 0.24);
@@ -1372,7 +1398,8 @@ function drawOppHead(J) {
   // mouth: a frowning, trembling open mouth with red lips (wailing takes over later).
   // always drawn open with lip colour + tongue — a thin dark arch read as a moustache
   if (d > 0.05 && d <= 0.62 && !(O.flinch > 0)) {
-    const a = Math.min(1, (d - 0.05) * 5), frown = (0.04 + d * 0.12) * R, w = (0.21 + d * 0.06) * R;
+    const [mu, mv, mw] = onFace(mouth.u, mouth.vI);
+    const a = Math.min(1, (d - 0.05) * 5), frown = (0.04 + d * 0.12) * R, w = (0.21 + d * 0.06) * R * mw;
     const open = (0.09 + d * 0.14) * R;
     const top = [], bot = [];
     for (let i = 0; i <= 14; i++) {
@@ -1380,7 +1407,7 @@ function drawOppHead(J) {
       const py = -frown * arch + frown * 0.5 + q;
       top.push([u * w, py]); bot.push([u * w * 0.94, frown * 0.5 - frown * arch * 0.3 + open * Math.sqrt(arch) + q]);
     }
-    ctx.save(); ctx.translate(0, 0.5 * R); ctx.globalAlpha = a;
+    ctx.save(); ctx.translate(mu * R, mv * R); ctx.globalAlpha = a;
     const shape = () => {
       ctx.beginPath(); top.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
       for (let i = bot.length - 1; i >= 0; i--) ctx.lineTo(bot[i][0], bot[i][1]);
@@ -1418,7 +1445,8 @@ function drawOppHead(J) {
   // wailing mouth
   if (d > 0.62) {
     const open = (0.1 + 0.05 * Math.sin(t * 11) + (d - 0.62) * 0.25) * R;
-    ctx.save(); ctx.translate(0, 0.46 * R);
+    const [mu, mv, mw] = onFace(mouth.u, mouth.vW);
+    ctx.save(); ctx.translate(mu * R, mv * R); ctx.scale(mw, 1);
     ctx.beginPath(); ctx.ellipse(0, 0, 0.26 * R, open, 0, 0, TAU);
     ctx.globalAlpha = 0.7;
     ctx.fillStyle = 'rgba(60,8,12,0.95)'; ctx.fill();
@@ -1879,13 +1907,14 @@ function loadFile(file) {
   const img = new Image();
   const seq = ++loadSeq;
   img.onload = async () => {
-    ed.img = img; ed.zoom = 1; ed.rot = 0; ed.ox = 0; ed.oy = 0;
+    ed.img = img; ed.zoom = 1; ed.rot = 0; ed.ox = 0; ed.oy = 0; ed.feat = null;
     $('#zoom').value = 1; $('#rotate').value = 0;
     drawEditor();
     setAlignStatus('🔍 自動對齊臉部中…', 'busy');
     const f = await detectFace(img);
     if (seq !== loadSeq) return;
     if (f) {
+      ed.feat = f;
       applyAlignment(img, f); drawEditor();
       setAlignStatus('✅ 已自動對齊,不準的話可以手動微調', 'ok');
     } else {
