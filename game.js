@@ -1701,13 +1701,47 @@ const card = $('#setup .card');
 card.addEventListener('dragover', e => e.preventDefault());
 card.addEventListener('drop', e => { e.preventDefault(); loadFile(e.dataTransfer.files[0]); });
 // paste a picture straight in (Ctrl+V / Cmd+V) while the setup card is open
+const blobToFile = b => new File([b], 'pasted', { type: b.type || 'image/png' });
+async function loadImageUrl(src) {
+  // pictures copied from some apps/pages only come through as an <img> link
+  try {
+    const r = await fetch(src);
+    const b = await r.blob();
+    if (!/^image\//.test(b.type)) throw 0;
+    loadFile(blobToFile(b));
+  } catch {
+    setAlignStatus('⚠️ 這張圖片的網站不給讀取,請先存到電腦再上傳,或改用截圖後貼上', 'warn');
+  }
+}
 addEventListener('paste', e => {
   if (!$('#setup').classList.contains('show')) return;
-  const items = [...(e.clipboardData?.items || [])];
-  const it = items.find(i => i.kind === 'file' && /^image\//.test(i.type));
-  if (!it) return; // plain text: let it paste into the name box as usual
-  e.preventDefault();
-  loadFile(it.getAsFile());
+  const cd = e.clipboardData;
+  if (!cd) return;
+  const file = [...(cd.files || [])].find(f => /^image\//.test(f.type)) ||
+    [...(cd.items || [])].filter(i => i.kind === 'file' && /^image\//.test(i.type)).map(i => i.getAsFile()).find(Boolean);
+  if (file) { e.preventDefault(); loadFile(file); return; }
+  const html = cd.getData('text/html');
+  const m = html && html.match(/<img[^>]+src=["']([^"']+)["']/i);
+  if (m) { e.preventDefault(); loadImageUrl(m[1].replace(/&amp;/g, '&')); return; }
+  const text = (cd.getData('text/plain') || '').trim();
+  if (/^(https?:|data:image\/)\S+$/i.test(text) && !(e.target instanceof HTMLInputElement)) {
+    e.preventDefault(); loadImageUrl(text); return;
+  }
+  // plain text: let it paste into the name box as usual
+  if (!(e.target instanceof HTMLInputElement)) setAlignStatus('⚠️ 剪貼簿裡沒有圖片,請在圖片上按右鍵「複製圖片」或截圖後再貼', 'warn');
+});
+// button fallback: reads the clipboard directly (also handy on phones)
+$('#paste').addEventListener('click', async () => {
+  if (!navigator.clipboard?.read) { setAlignStatus('⚠️ 這個瀏覽器不支援按鈕貼上,請直接按 Ctrl+V', 'warn'); return; }
+  try {
+    for (const item of await navigator.clipboard.read()) {
+      const t = item.types.find(t => /^image\//.test(t));
+      if (t) { loadFile(blobToFile(await item.getType(t))); return; }
+    }
+    setAlignStatus('⚠️ 剪貼簿裡沒有圖片,請在圖片上按右鍵「複製圖片」或截圖後再貼', 'warn');
+  } catch {
+    setAlignStatus('⚠️ 瀏覽器沒有允許讀取剪貼簿,請直接按 Ctrl+V', 'warn');
+  }
 });
 $('#start').addEventListener('click', startGame);
 $('#again').addEventListener('click', startGame);
