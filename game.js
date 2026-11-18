@@ -284,6 +284,10 @@ const SMASH_HIT   = [0.55, 0.25, 1.7, 0.3, 1.5, 0.3, 0.3, -1.2, 1.0, -1.5];
 const GRAB        = [0.25, 0.0, 1.3, 0.3, 1.45, 0.2, -0.45, -0.1, 0.45, -0.4];
 const LIFT        = [-0.3, -0.3, 3.0, 0.1, 3.1, 0.05, -0.3, -0.2, 0.4, -0.4];
 const SLAM        = [-0.45, -0.2, 4.1, 0.2, 4.2, 0.1, -0.2, -0.3, 0.6, -0.6];
+// 過肩摔: pull the wrist in, turn your back, load him on the shoulder, bend over and flip him
+const SEOI_PULL   = [-0.1, 0.05, 1.0, 1.7, 1.1, 1.6, -0.45, -0.1, 0.3, -0.3];
+const SEOI_LOAD   = [0.35, 0.1, 0.5, 1.9, 0.7, 1.7, 0.45, -1.1, 0.85, -1.3];
+const SEOI_TOSS   = [1.0, 0.25, 0.4, 0.5, 0.3, 0.6, -0.35, -0.1, 0.55, -0.35];
 const PILE_LAND   = [0.3, 0.2, 2.2, 0.4, 2.3, 0.3, -0.9, -0.9, 1.2, -2.0];
 const JUMP        = [0.15, -0.15, 2.3, 0.9, 2.0, 1.0, 0.5, -1.7, 1.3, -1.9];
 const FALL        = [0.05, -0.05, 1.9, 0.7, 1.7, 0.8, 0.1, -0.6, 0.7, -0.9];
@@ -338,7 +342,7 @@ const MOVES = {
   slap:  { dur: 0.32, reach: 72, hits: [HIT(0.13, 'slap', 4, 140)] },
   punch: { dur: 0.32, reach: 84, hits: [HIT(0.11, 'punch', 6, 240)] },
   kick:  { dur: 0.46, reach: 110, hits: [HIT(0.19, 'kick', 8, 430, { stun: 0.55 })] },
-  throw: { dur: 1.0, reach: 64, grab: 'throw', frames: [[0, STANCE], [0.15, GRAB], [0.45, LIFT], [0.75, SLAM], [1.0, STANCE]] },
+  throw: { dur: 1.15, reach: 64, grab: 'throw', frames: [[0, STANCE], [0.15, GRAB], [0.3, SEOI_PULL], [0.45, SEOI_LOAD], [0.6, SEOI_LOAD], [0.85, SEOI_TOSS], [1.15, STANCE]] },
   slapRush: { title: '連環巴掌', dur: 1.0, reach: 72, hits: [] },
   punchRush: { title: '百裂拳', dur: 1.05, reach: 84, hits: [] },
   uppercut: { title: '下鉤拳', dur: 0.62, reach: 86, hits: [HIT(0.16, 'upper', 12, 560, { ky: 1250, stun: 0.6 })] },
@@ -716,32 +720,96 @@ function updatePlayer(dt) {
     if (O.state !== 'grabbed') P.f = Math.sign(O.x - P.x) || P.f;
   }
 }
+const mix2 = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+/* two-bone IK: bend the opponent's front arm so its hand lands on world point H, shoulder at world point S */
+function reachArm(E, D, S, H) {
+  let dx = (H[0] - S[0]) * E.f, dy = H[1] - S[1];
+  const r0 = E.bodyRot || 0, c = Math.cos(-r0), s = Math.sin(-r0);
+  [dx, dy] = [dx * c - dy * s, dx * s + dy * c];
+  const l1 = D.ua, l2 = D.fa, r = clamp(Math.hypot(dx, dy), Math.abs(l1 - l2) + 1, l1 + l2 - 0.01);
+  const dir = Math.atan2(dx, dy);
+  const a = Math.acos(clamp((l1 * l1 + r * r - l2 * l2) / (2 * l1 * r), -1, 1));
+  const b = Math.acos(clamp((l1 * l1 + l2 * l2 - r * r) / (2 * l1 * l2), -1, 1));
+  E.pose[4] = dir + a; E.pose[5] = -(Math.PI - b);
+}
+/* place a held body so that its shoulder sits on world point S */
+function hangFromShoulder(E, D, S) {
+  E.hold = { x: 0, y: 0 };
+  const J0 = solveBody(E, D);
+  let lift = 0; // never sink through the floor
+  for (const k of ['fB', 'fF', 'kB', 'kF', 'hip', 'neck']) lift = Math.max(lift, S[1] - J0.sh[1] + J0[k][1] + 8 - GY);
+  lift = Math.max(lift, S[1] - J0.sh[1] + J0.head[1] + D.headR * 0.55 - GY);
+  E.hold = { x: S[0] - J0.sh[0], y: S[1] - J0.sh[1] - lift };
+}
+/* where his shoulder ends up when he lies on his back with his hip at x */
+function lyingShoulder(x) {
+  const save = { x: O.x, h: O.h, hold: O.hold, rot: O.bodyRot, pose: O.pose };
+  Object.assign(O, { x, h: 0, hold: null, bodyRot: -Math.PI / 2, pose: LYING });
+  const sh = solveBody(O, OD).sh;
+  Object.assign(O, { x: save.x, h: save.h, hold: save.hold, bodyRot: save.rot, pose: save.pose });
+  return sh;
+}
+/* 過肩摔 (seoi-nage): grab his wrist, pull, turn your back, load him over your shoulder, flip him to the other side */
+function seoiNage(A, t) {
+  const f = A.f, jit = () => (Math.random() - 0.5) * 0.25;
+  let body = lerpPose(O.pose, AIR, 0.25).map((v, i) => (i > 1 ? v + jit() : v));
+  if (t < 0.3) { // pulled in by the wrist, stumbling toward you
+    P.f = f;
+    O.hold = null; O.bodyRot = lerp(O.bodyRot, -0.25, 0.3);
+    O.x += (P.x + f * 58 - O.x) * 0.25;
+    O.pose = lerpPose(O.pose, HURT2, 0.3);
+    P.J = solveBody(P, PD);
+    const J0 = solveBody(O, OD);
+    reachArm(O, OD, J0.sh, P.J.hF);
+    A.s0 = J0.sh;
+    return;
+  }
+  // turn in: your back to him, his arm over your shoulder
+  P.f = -f;
+  if (A.landX == null) A.landX = clamp(P.x - f * 240, 62, W - 62);
+  P.J = solveBody(P, PD);
+  const shTop = [P.J.sh[0] + f * 10, P.J.sh[1] - 12];
+  let S, rot;
+  if (t < 0.45) {
+    const k = ease((t - 0.3) / 0.15);
+    S = mix2(A.s0, shTop, k); rot = lerp(-0.25, 0.5, k);
+  } else if (t < 0.85) {
+    const u = (t - 0.45) / 0.4;
+    rot = 0.5 + (Math.PI * 1.5 - 0.5) * ease(u);
+    const ground = lyingShoulder(A.landX), k2 = ease(clamp((u - 0.55) / 0.45, 0, 1));
+    S = mix2(shTop, ground, k2);
+    body = lerpPose(body, LYING, k2);
+  }
+  if (t < 0.85) {
+    O.bodyRot = rot;
+    O.pose = body;
+    hangFromShoulder(O, OD, S);
+    reachArm(O, OD, S, P.J.hF);
+    return;
+  }
+  // slam — flat on his back on the far side, head toward you
+  A.done = true; O.hold = null;
+  O.x = A.landX; O.h = 0; O.vx = -f * 40; O.vy = 0;
+  O.bodyRot = -Math.PI / 2; O.state = 'down'; O.st = 1.0;
+  landFx(1.5);
+  applyHit(16, 'slam', -f);
+}
 function updateGrab(A, m) {
   const t = A.t, f = P.f;
   if (!A.checked && t >= 0.15) {
     A.checked = true;
     const dx = (O.x - P.x) * f;
     if (dx > -10 && dx < m.reach + 40 && O.h < 40 && (O.state === 'idle' || O.state === 'hit')) {
-      A.grabbed = true; O.state = 'grabbed'; O.vx = O.vy = 0; O.f = -f; O.h = 0;
+      A.grabbed = true; A.f = f; O.state = 'grabbed'; O.vx = O.vy = 0; O.f = -f; O.h = 0;
       SFX.grab();
       const line = pick(GRAB_LINES); setBubble(line, true); speak(line, 0.8, true);
     }
   }
   if (!A.grabbed || A.done) { if (m.grab === 'pile') P.h = 0; return; }
+  if (m.grab === 'throw') { seoiNage(A, t); return; }
   const jit = () => (Math.random() - 0.5) * 0.3;
   O.pose = lerpPose(O.pose, AIR, 0.25).map((v, i) => (i > 1 ? v + jit() : v));
-  if (m.grab === 'throw') {
-    const e = ease(clamp((t - 0.2) / 0.55, 0, 1)), phi = e * Math.PI;
-    O.hold = { x: P.x + f * Math.cos(phi) * 60, y: GY - 100 - Math.sin(phi) * 105 };
-    O.bodyRot = -e * Math.PI * 1.4;
-    if (t >= 0.75) {
-      A.done = true; O.hold = null;
-      O.x = clamp(P.x - f * 80, 62, W - 62); O.h = 0; O.vx = -f * 80; O.vy = 0;
-      O.f = f; O.bodyRot = -Math.PI / 2; O.state = 'down'; O.st = 1.0; O.pose = LYING.slice();
-      landFx(1.4);
-      applyHit(15, 'slam', -f);
-    }
-  } else {
+  {
     const l = ease(clamp((t - 0.2) / 0.3, 0, 1));
     P.h = t < 0.25 ? 0 : t < 0.6 ? 170 * easeOut((t - 0.25) / 0.35) : t < 0.9 ? 170 * (1 - Math.pow((t - 0.6) / 0.3, 2)) : 0;
     O.bodyRot = Math.PI * l;
