@@ -1026,6 +1026,24 @@ function updateFx(dt) {
   if (G.bubble) { G.bubble.t += dt; if (G.bubble.t > G.bubble.dur) G.bubble = null; }
   if (G.banner) { G.banner.t += dt; if (G.banner.t > 1.3) G.banner = null; }
 }
+/* the screen edges are walls: no part of a body (head, hands, feet) may cross them */
+const WALL = 4;
+function keepInside(E, D, J) {
+  let lo = 1e9, hi = -1e9;
+  for (const k in J) {
+    const v = J[k];
+    if (!Array.isArray(v) || k === 'footVec') continue;
+    const r = k === 'head' ? D.headR : k[0] === 'h' || k[0] === 'f' ? 8 : 6;
+    lo = Math.min(lo, v[0] - r); hi = Math.max(hi, v[0] + r);
+  }
+  let d = 0;
+  if (lo < WALL) d = WALL - lo;
+  else if (hi > W - WALL) d = W - WALL - hi;
+  if (!d) return;
+  for (const k in J) if (Array.isArray(J[k]) && k !== 'footVec') J[k][0] += d;
+  if (E.hold) E.hold.x += d; else E.x += d;
+  if (E.vx && Math.sign(E.vx) === -Math.sign(d)) E.vx = 0;
+}
 function update(rdt) {
   if (G.slowT > 0) { G.slowT -= rdt; if (G.slowT <= 0) G.slow = 1; }
   G.flash = Math.max(0, G.flash - rdt * 2.5);
@@ -1044,6 +1062,8 @@ function update(rdt) {
   separate();
   P.J = solveBody(P, PD);
   O.J = solveBody(O, OD);
+  keepInside(O, OD, O.J);
+  keepInside(P, PD, P.J);
   updateFx(dt);
   G.comboT -= dt;
   if (G.comboT <= 0) G.combo = 0;
