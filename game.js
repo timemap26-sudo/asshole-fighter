@@ -1266,26 +1266,34 @@ function drawOppHead(J) {
     ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.ellipse(ex - 0.05 * R, ey - 0.08 * R, R * 0.05, R * 0.025, -0.4, 0, TAU); ctx.fill();
     ctx.restore();
   }
-  // mouth: a nervous wobble, then a deep frown, then quivering lips (wailing takes over later)
+  // mouth: a frowning, trembling open mouth with red lips (wailing takes over later).
+  // always drawn open with lip colour + tongue — a thin dark arch read as a moustache
   if (d > 0.05 && d <= 0.62 && !(O.flinch > 0)) {
-    const a = Math.min(1, (d - 0.05) * 5), frown = (0.02 + d * 0.22) * R, w = (0.16 + d * 0.08) * R;
-    ctx.save(); ctx.translate(0, 0.47 * R);
-    ctx.strokeStyle = `rgba(55,15,20,${0.9 * a})`; ctx.lineWidth = R * 0.05; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    ctx.beginPath();
-    for (let i = 0; i <= 12; i++) {
-      const u = i / 12 * 2 - 1, q = Math.sin(t * 30 + i * 1.7) * d * 0.025 * R;
-      const py = -frown * (1 - u * u) + frown * 0.5 + q;
-      i ? ctx.lineTo(u * w, py) : ctx.moveTo(u * w, py);
+    const a = Math.min(1, (d - 0.05) * 5), frown = (0.04 + d * 0.12) * R, w = (0.21 + d * 0.06) * R;
+    const open = (0.09 + d * 0.14) * R;
+    const top = [], bot = [];
+    for (let i = 0; i <= 14; i++) {
+      const u = i / 14 * 2 - 1, q = Math.sin(t * 30 + i * 1.7) * d * 0.008 * R, arch = 1 - u * u;
+      const py = -frown * arch + frown * 0.5 + q;
+      top.push([u * w, py]); bot.push([u * w * 0.94, frown * 0.5 - frown * arch * 0.3 + open * Math.sqrt(arch) + q]);
     }
-    if (d > 0.35) { // lips part, trembling
-      const open = (0.03 + (d - 0.35) * 0.25) * R;
-      for (let i = 12; i >= 0; i--) {
-        const u = i / 12 * 2 - 1, q = Math.sin(t * 30 + i * 2.3) * d * 0.02 * R;
-        ctx.lineTo(u * w * 0.85, -frown * (1 - u * u) + frown * 0.5 + open * (1 - u * u) + q);
-      }
-      ctx.closePath(); ctx.fillStyle = `rgba(60,8,12,${0.9 * a})`; ctx.fill();
-    }
-    ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.translate(0, 0.5 * R); ctx.globalAlpha = a;
+    const shape = () => {
+      ctx.beginPath(); top.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+      for (let i = bot.length - 1; i >= 0; i--) ctx.lineTo(bot[i][0], bot[i][1]);
+      ctx.closePath();
+    };
+    shape(); ctx.fillStyle = 'rgba(70,10,18,0.95)'; ctx.fill();
+    ctx.save(); ctx.clip();
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'; // upper teeth
+    ctx.beginPath(); top.forEach(([x, y], i) => i ? ctx.lineTo(x * 0.8, y + open * 0.22) : ctx.moveTo(x * 0.8, y + open * 0.22));
+    for (let i = top.length - 1; i >= 0; i--) ctx.lineTo(top[i][0] * 0.8, top[i][1] - 2);
+    ctx.fill();
+    ctx.fillStyle = '#e0607a'; // tongue
+    ctx.beginPath(); ctx.ellipse(0, frown * 0.2 + open * 0.95, w * 0.5, open * 0.45, 0, 0, TAU); ctx.fill();
+    ctx.restore();
+    shape(); ctx.strokeStyle = '#c23a4c'; ctx.lineWidth = R * 0.05; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+    ctx.restore();
   }
   // tears streaming
   if (d > 0.28) {
