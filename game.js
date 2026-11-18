@@ -1606,6 +1606,12 @@ $('#btn-voice').addEventListener('click', e => {
 const KEYMAP = { KeyA: 'slap', KeyS: 'punch', KeyD: 'kick', KeyF: 'throw', KeyG: 'chain', Space: 'chain', KeyZ: 'slap', KeyX: 'punch', KeyC: 'kick', KeyV: 'throw', KeyB: 'chain' };
 const DIRS = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
 addEventListener('keydown', e => {
+  // end screen: Enter jumps straight into the next round
+  if ((e.code === 'Enter' || e.code === 'NumpadEnter') && $('#end').classList.contains('show')) {
+    e.preventDefault();
+    if (!e.repeat) startGame();
+    return;
+  }
   if (e.target instanceof HTMLInputElement) return;
   if (DIRS[e.code]) {
     e.preventDefault();
