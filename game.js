@@ -377,7 +377,7 @@ function resetGame() {
   Object.assign(P, { x: 300, h: 0, vy: 0, air: false, crouch: false, f: 1, act: null, queue: null, dash: null, pose: STANCE.slice(), walkPh: 0, bodyRot: 0, hold: null, open: null, J: null });
   Object.assign(O, {
     x: 660, h: 0, vx: 0, vy: 0, f: -1, state: 'idle', st: 0, maxHp: 150, hp: 150, ghostHp: 150, stage: 0,
-    headRot: 0, headRotV: 0, squash: 0, hitFlash: 0, marks: [], lumps: [], cracks: null, pose: COWER.slice(),
+    headRot: 0, headRotV: 0, squash: 0, hitFlash: 0, flinch: 0, marks: [], lumps: [], cracks: null, pose: COWER.slice(),
     bodyRot: 0, hold: null, bounced: false, hurtVar: false, J: null,
   });
   P.J = solveBody(P, PD); O.J = solveBody(O, OD);
@@ -541,7 +541,7 @@ function applyHit(dmg, kind, dir, h = {}) {
   const prevStage = O.stage;
   O.hp = Math.max(0, O.hp - dmg);
   O.stage = stageOf();
-  O.hitFlash = 1;
+  O.hitFlash = 1; O.flinch = 0.32;
   const isSlap = kind.startsWith('slap'), isPunch = kind.startsWith('punch');
   O.headRotV += dir * (isSlap ? rand(15, 21) : isPunch ? rand(8, 12) : kind === 'wall' ? 6 : 11);
   O.squash = isSlap ? 0.5 : 0.35;
@@ -757,6 +757,7 @@ function updateOpp(dt) {
   O.headRot = clamp(O.headRot + O.headRotV * dt, -1.2, 1.2);
   O.squash *= Math.exp(-dt * 9);
   O.hitFlash = Math.max(0, O.hitFlash - dt * 3);
+  O.flinch = Math.max(0, O.flinch - dt);
   O.ghostHp = Math.max(O.hp, O.ghostHp - 30 * dt);
   if (O.state === 'grabbed') return;
 
@@ -1146,11 +1147,58 @@ function drawOppHead(J) {
   if (gA > 0) { ctx.globalAlpha = gA; drawFaceImg(face.gray, R, wob); ctx.globalAlpha = 1; }
   for (const m of O.marks) drawMark(m, R);
   if (d > 0.6) { ctx.fillStyle = `rgba(110,170,110,${(d - 0.6) * 0.35})`; ctx.fillRect(-R, -R, 2 * R, 2 * R); }
-  // worried brows
-  if (d > 0.18) {
-    const a = Math.min(1, (d - 0.18) * 4);
-    ctx.strokeStyle = `rgba(40,25,20,${0.85 * a})`; ctx.lineWidth = R * 0.07; ctx.lineCap = 'round';
-    for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 0.12 * R, -0.38 * R); ctx.lineTo(s * 0.5 * R, -0.26 * R); ctx.stroke(); }
+  // flushed, puffy cheeks — redder and wider the more it hurts
+  if (d > 0.12) {
+    const a = Math.min(1, (d - 0.12) * 1.6), cr = R * (0.2 + d * 0.12);
+    for (const s of [-1, 1]) {
+      const cx = s * 0.42 * R, cy = 0.2 * R, g = ctx.createRadialGradient(cx, cy, 0, cx, cy, cr);
+      g.addColorStop(0, `rgba(235,60,70,${0.5 * a})`); g.addColorStop(1, 'rgba(235,60,70,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, cr, 0, TAU); ctx.fill();
+    }
+  }
+  // brows: knit together and slant up harder with every stage
+  if (d > 0.08) {
+    const a = Math.min(1, (d - 0.08) * 4), tilt = 0.06 + d * 0.22, shake = Math.sin(t * 20) * 0.012 * d * R;
+    ctx.strokeStyle = `rgba(40,25,20,${0.85 * a})`; ctx.lineWidth = R * (0.06 + d * 0.03); ctx.lineCap = 'round';
+    for (const s of [-1, 1]) {
+      ctx.beginPath(); ctx.moveTo(s * 0.1 * R, (-0.4 - tilt * 0.5) * R + shake);
+      ctx.quadraticCurveTo(s * 0.3 * R, (-0.36 - tilt * 0.4) * R, s * 0.52 * R, (-0.32 + tilt * 0.6) * R + shake);
+      ctx.stroke();
+    }
+  }
+  // the eye that took the punches swells shut bit by bit
+  if (d > 0.3) {
+    const k = Math.min(1, (d - 0.3) / 0.5), ex = -0.32 * R, ey = -0.1 * R;
+    ctx.save();
+    ctx.beginPath(); ctx.ellipse(ex, ey - 0.02 * R, R * (0.17 + 0.07 * k), R * (0.1 + 0.1 * k), 0, 0, TAU);
+    const g = ctx.createRadialGradient(ex, ey - 0.05 * R, 0, ex, ey, R * 0.24);
+    g.addColorStop(0, `rgba(150,60,140,${0.6 + 0.35 * k})`); g.addColorStop(1, `rgba(90,30,100,${0.5 + 0.4 * k})`);
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = 'rgba(40,10,40,0.7)'; ctx.lineWidth = R * 0.02;
+    ctx.beginPath(); ctx.moveTo(ex - 0.15 * R, ey + 0.04 * R * (1 - k)); ctx.quadraticCurveTo(ex, ey + 0.08 * R, ex + 0.15 * R, ey + 0.04 * R * (1 - k)); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.ellipse(ex - 0.05 * R, ey - 0.08 * R, R * 0.05, R * 0.025, -0.4, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+  // mouth: a nervous wobble, then a deep frown, then quivering lips (wailing takes over later)
+  if (d > 0.05 && d <= 0.62 && !(O.flinch > 0)) {
+    const a = Math.min(1, (d - 0.05) * 5), frown = (0.02 + d * 0.22) * R, w = (0.16 + d * 0.08) * R;
+    ctx.save(); ctx.translate(0, 0.47 * R);
+    ctx.strokeStyle = `rgba(55,15,20,${0.9 * a})`; ctx.lineWidth = R * 0.05; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = 0; i <= 12; i++) {
+      const u = i / 12 * 2 - 1, q = Math.sin(t * 30 + i * 1.7) * d * 0.025 * R;
+      const py = -frown * (1 - u * u) + frown * 0.5 + q;
+      i ? ctx.lineTo(u * w, py) : ctx.moveTo(u * w, py);
+    }
+    if (d > 0.35) { // lips part, trembling
+      const open = (0.03 + (d - 0.35) * 0.25) * R;
+      for (let i = 12; i >= 0; i--) {
+        const u = i / 12 * 2 - 1, q = Math.sin(t * 30 + i * 2.3) * d * 0.02 * R;
+        ctx.lineTo(u * w * 0.85, -frown * (1 - u * u) + frown * 0.5 + open * (1 - u * u) + q);
+      }
+      ctx.closePath(); ctx.fillStyle = `rgba(60,8,12,${0.9 * a})`; ctx.fill();
+    }
+    ctx.stroke(); ctx.restore();
   }
   // tears streaming
   if (d > 0.28) {
@@ -1177,6 +1225,7 @@ function drawOppHead(J) {
     ctx.fillStyle = 'rgba(60,8,12,0.95)'; ctx.fill();
     ctx.clip();
     ctx.fillStyle = '#fff'; ctx.fillRect(-0.2 * R, -open, 0.4 * R, open * 0.38);
+    ctx.fillStyle = 'rgba(60,8,12,0.95)'; ctx.fillRect(-0.06 * R, -open, 0.07 * R, open * 0.38); // knocked-out tooth
     ctx.fillStyle = '#e0607a'; ctx.beginPath(); ctx.ellipse(0, open * 0.85, 0.16 * R, open * 0.5, 0, 0, TAU); ctx.fill();
     ctx.restore();
   }
@@ -1204,6 +1253,36 @@ function drawOppHead(J) {
       }
       ctx.stroke();
     }
+  }
+  // snot bubble swelling and popping from one nostril
+  if (d > 0.55 && !G.ko) {
+    const ph = (t * 0.7) % 1, br = R * (0.02 + ph * 0.11 * Math.min(1, (d - 0.55) * 3));
+    ctx.fillStyle = 'rgba(190,230,170,0.75)'; ctx.fillRect(0.09 * R, 0.22 * R, 0.035 * R, 0.08 * R);
+    if (ph < 0.92) {
+      ctx.fillStyle = 'rgba(200,240,200,0.4)'; ctx.strokeStyle = 'rgba(150,200,150,0.8)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(0.11 * R, 0.3 * R + br, br, 0, TAU); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.arc(0.11 * R - br * 0.35, 0.3 * R + br * 0.65, br * 0.2, 0, TAU); ctx.fill();
+    }
+  }
+  // flinch: eyes squeezed shut "> <" and teeth gritted for a moment after each hit
+  if (O.flinch > 0 && !G.ko) {
+    const a = Math.min(1, O.flinch * 6);
+    for (const s of [-1, 1]) {
+      const ex = s * 0.32 * R, ey = -0.1 * R;
+      ctx.fillStyle = face.skin; ctx.globalAlpha = a; ctx.beginPath(); ctx.ellipse(ex, ey, 0.17 * R, 0.11 * R, 0, 0, TAU); ctx.fill();
+      ctx.strokeStyle = '#1a0d0d'; ctx.lineWidth = R * 0.05; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.beginPath(); ctx.moveTo(ex - s * 0.13 * R, ey - 0.08 * R); ctx.lineTo(ex + s * 0.08 * R, ey); ctx.lineTo(ex - s * 0.13 * R, ey + 0.08 * R); ctx.stroke();
+    }
+    if (d <= 0.62) {
+      const mw = (0.18 + d * 0.08) * R, mh = 0.07 * R;
+      ctx.save(); ctx.translate(0, 0.47 * R);
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = '#3a0a10'; ctx.lineWidth = R * 0.035;
+      ctx.beginPath(); ctx.rect(-mw, -mh, 2 * mw, 2 * mh); ctx.fill(); ctx.stroke();
+      ctx.lineWidth = R * 0.018; ctx.beginPath(); ctx.moveTo(-mw, 0); ctx.lineTo(mw, 0);
+      for (let i = 1; i < 5; i++) { const x = -mw + (2 * mw * i) / 5; ctx.moveTo(x, -mh); ctx.lineTo(x, mh); }
+      ctx.stroke(); ctx.restore();
+    }
+    ctx.globalAlpha = 1;
   }
   // cracks
   if (O.cracks) {
