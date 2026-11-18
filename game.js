@@ -277,6 +277,11 @@ const SLAPB_WIND  = [-0.05, 0.05, -0.5, 2.0, 0.8, 1.7, -0.35, -0.15, 0.35, -0.35
 const SLAPB_HIT   = [0.28, -0.15, 1.5, 0.1, 0.6, 1.8, -0.5, -0.05, 0.4, -0.35];
 const KICK_WIND   = [-0.1, 0.0, 0.8, 1.5, 1.0, 1.6, -0.1, 0.0, 1.0, -1.7];
 const KICK_HIT    = [-0.38, 0.18, 1.3, 0.7, 0.5, 1.5, -0.15, 0.0, 1.78, 0.0];
+// 連環踢: back-leg mid kick and a front-leg high kick
+const KICKB_WIND  = [-0.05, 0.0, 0.9, 1.4, 0.8, 1.7, 1.0, -1.8, 0.25, -0.2];
+const KICKB_HIT   = [-0.4, 0.18, 0.6, 1.6, 1.3, 0.7, 1.85, 0.0, -0.1, 0.0];
+const KICKH_WIND  = [-0.15, 0.05, 0.8, 1.5, 1.0, 1.6, -0.15, 0.0, 1.3, -2.0];
+const KICKH_HIT   = [-0.62, 0.28, 1.4, 0.6, 0.5, 1.5, -0.2, 0.0, 2.35, 0.0];
 const UPPER_WIND  = [0.4, -0.2, 0.6, 1.7, 0.2, 2.1, -0.25, -0.75, 0.95, -1.05];
 const UPPER_HIT   = [-0.15, -0.35, 0.6, 1.8, 2.95, 0.12, -0.3, -0.1, 0.5, -0.9];
 const SMASH_WIND  = [-0.25, -0.2, 3.0, 0.3, 3.1, 0.2, 0.4, -1.4, 1.1, -1.6];
@@ -288,6 +293,8 @@ const SLAM        = [-0.45, -0.2, 4.1, 0.2, 4.2, 0.1, -0.2, -0.3, 0.6, -0.6];
 const SEOI_PULL   = [-0.1, 0.05, 1.0, 1.7, 1.1, 1.6, -0.45, -0.1, 0.3, -0.3];
 const SEOI_LOAD   = [0.35, 0.1, 0.5, 1.9, 0.7, 1.7, 0.45, -1.1, 0.85, -1.3];
 const SEOI_TOSS   = [1.0, 0.25, 0.4, 0.5, 0.3, 0.6, -0.35, -0.1, 0.55, -0.35];
+// 連環摔: swing him over your head and smash him into the floor in front / behind
+const BACKSLAM    = [-0.6, -0.3, 3.75, 0.2, 3.85, 0.1, -0.55, -0.1, 0.4, -0.5];
 const PILE_LAND   = [0.3, 0.2, 2.2, 0.4, 2.3, 0.3, -0.9, -0.9, 1.2, -2.0];
 const JUMP        = [0.15, -0.15, 2.3, 0.9, 2.0, 1.0, 0.5, -1.7, 1.3, -1.9];
 const FALL        = [0.05, -0.05, 1.9, 0.7, 1.7, 0.8, 0.1, -0.6, 0.7, -0.9];
@@ -316,12 +323,12 @@ function kf(frames, t) {
 const STRIKE = {
   slap: [SLAP_WIND, SLAP_HIT], slapB: [SLAPB_WIND, SLAPB_HIT],
   punch: [PUNCH_WIND, PUNCH_HIT], punchB: [PUNCHB_WIND, PUNCHB_HIT],
-  kick: [KICK_WIND, KICK_HIT], upper: [UPPER_WIND, UPPER_HIT], smash: [SMASH_WIND, SMASH_HIT],
+  kick: [KICK_WIND, KICK_HIT], kickB: [KICKB_WIND, KICKB_HIT], kickH: [KICKH_WIND, KICKH_HIT], upper: [UPPER_WIND, UPPER_HIT], smash: [SMASH_WIND, SMASH_HIT],
 };
 function strikePose(m, t) {
   let prevT = 0, prev = STANCE, prevKind = null;
   for (const h of m.hits) {
-    const [wind, hit] = STRIKE[h.kind];
+    const [wind, hit] = STRIKE[h.pose || h.kind];
     if (t <= h.t) {
       P.open = h.kind === 'slap' ? 'F' : h.kind === 'slapB' ? 'B' : null;
       const u = (t - prevT) / (h.t - prevT);
@@ -347,6 +354,10 @@ const MOVES = {
   punchRush: { title: '百裂拳', dur: 1.05, reach: 84, hits: [] },
   uppercut: { title: '下鉤拳', dur: 0.62, reach: 86, hits: [HIT(0.16, 'upper', 12, 560, { ky: 1250, stun: 0.6 })] },
   rising: { title: '沖天拳', dur: 0.8, reach: 84, hits: [HIT(0.2, 'upper', 11, 90, { ky: 880, stun: 0.6 })] },
+  kickRush: { title: '連環踢', dur: 1.2, reach: 110, hits: [] },
+  throwRush: { title: '連環摔', dur: 2.5, reach: 66, grab: 'rush', chase: true, frames: [
+    [0, STANCE], [0.15, GRAB], [0.3, SEOI_PULL], [0.48, LIFT], [0.72, SLAM], [0.85, LIFT], [1.12, BACKSLAM], [1.25, LIFT],
+    [1.52, SLAM], [1.65, LIFT], [1.95, BACKSLAM], [2.2, BACKSLAM], [2.5, STANCE]] },
   pile: { title: '地獄摔', dur: 1.45, reach: 66, grab: 'pile', frames: [[0, STANCE], [0.15, GRAB], [0.45, LIFT], [0.7, LIFT], [0.92, PILE_LAND], [1.45, STANCE]] },
   chain: { title: '連環技', dur: 1.15, reach: 80, hits: [
     HIT(0.1, 'slap', 3, 40), HIT(0.25, 'slapB', 3, 40), HIT(0.42, 'punch', 4, 50), HIT(0.56, 'punchB', 4, 60), HIT(0.8, 'kick', 7, 470, { stun: 0.6 })] },
@@ -354,6 +365,8 @@ const MOVES = {
 };
 for (let i = 0; i < 6; i++) MOVES.slapRush.hits.push(HIT(0.1 + i * 0.12, i % 2 ? 'slapB' : 'slap', 3, i === 5 ? 340 : 50, { light: i < 5 }));
 for (let i = 0; i < 8; i++) MOVES.punchRush.hits.push(HIT(0.08 + i * 0.1, i % 2 ? 'punchB' : 'punch', 2.5, i === 7 ? 360 : 35, { light: i < 7, ky: i === 7 ? 260 : 0 }));
+['kick', 'kickB', 'kick', 'kickB', 'kick'].forEach((pose, i) => MOVES.kickRush.hits.push(HIT(0.12 + i * 0.15, 'kick', 3, 40, { pose, light: true })));
+MOVES.kickRush.hits.push(HIT(0.95, 'kick', 7, 540, { pose: 'kickH', ky: 300, stun: 0.6 }));
 [0.32, 0.42, 0.52, 0.62].forEach((t, i) => MOVES.ultimate.hits.push(HIT(t, i % 2 ? 'slapB' : 'slap', 2.5, 25, { force: true, light: true })));
 [0.76, 0.85, 0.94, 1.03].forEach((t, i) => MOVES.ultimate.hits.push(HIT(t, i % 2 ? 'punchB' : 'punch', 2.5, 25, { force: true, light: true })));
 MOVES.ultimate.hits.push(HIT(1.18, 'kick', 5, 40, { force: true }));
@@ -364,6 +377,8 @@ const SEQS = [
   { seq: 'slap,slap,slap', move: 'slapRush' },
   { seq: 'punch,punch,punch', move: 'punchRush' },
   { seq: 'slap,punch,kick', move: 'rising' },
+  { seq: 'kick,kick,kick', move: 'kickRush' },
+  { seq: 'throw,throw,throw', move: 'throwRush' },
   { seq: 'kick,kick,throw', move: 'pile' },
 ];
 
@@ -437,7 +452,7 @@ function jump() {
   P.air = true; P.vy = JUMP_V; P.h = Math.max(P.h, 1); P.crouch = false;
   SFX.whoosh();
 }
-const groundOnly = name => name === 'throw' || name === 'pile' || name === 'chain' || name === 'ultimate';
+const groundOnly = name => name === 'throw' || name === 'throwRush' || name === 'pile' || name === 'chain' || name === 'ultimate';
 /* double-tap ← or → to dash that way */
 const DASH_GAP = 0.28, DASH_T = 0.24, DASH_V = 1100;
 const lastTap = { left: -1, right: -1 };
@@ -454,10 +469,40 @@ function dash(dir) {
   noise({ dur: 0.18, type: 'bandpass', freq: 1800, freqEnd: 600, q: 0.8, gain: 0.35 });
   for (let i = 0; i < 8; i++) G.particles.push({ type: 'dust', x: P.x - dir * rand(0, 30), y: GY + rand(-4, 4), vx: -dir * rand(80, 260), vy: rand(-80, -10), life: rand(0.3, 0.5), t: 0, size: rand(6, 12) });
 }
+/* combo inputs are read when the button is pressed, so mashing during a move still counts */
+function logPress(btn) {
+  if (btn === 'chain' || (btn === 'punch' && held.down && !P.air)) { G.hist = []; return null; }
+  const now = performance.now() / 1000;
+  const last = G.hist[G.hist.length - 1];
+  if (last && now - last.t > 0.9) G.hist = [];
+  G.hist.push({ b: btn, t: now });
+  if (G.hist.length > 3) G.hist.shift();
+  if (G.hist.length < 3) return null;
+  const s = G.hist.map(h => h.b).join(',');
+  const hit = SEQS.find(q => q.seq === s);
+  if (hit) G.hist = [];
+  return hit ? hit.move : null;
+}
+const BASIC = { slap: 1, punch: 1, kick: 1 };
 function press(btn) {
   if (!G.running || G.ko) return;
   audio();
+  const combo = logPress(btn);
+  if (combo) {
+    const A = P.act;
+    if (A && A.name === 'throw' && combo === 'throwRush' && !A.done && A.t <= 0.32) { // still pulling him in: keep the grip and go straight into the rush
+      A.name = combo; A.m = MOVES[combo]; G.banner = { text: A.m.title, t: 0, ult: false }; SFX.whoosh();
+      return;
+    }
+    if (!A || BASIC[A.name] || (A.m.grab && A.checked && !A.grabbed)) {
+      if (P.air && groundOnly(combo)) { P.act = null; P.queue = { move: combo }; return; }
+      P.act = null; P.dash = null; startMove(combo); return;
+    }
+    if (!A.m.ultimate) P.queue = { move: combo };
+    return;
+  }
   if (P.act || (P.air && btn === 'throw')) {
+    if (P.queue && typeof P.queue === 'object') return; // a queued combo wins
     if (!P.act) { P.queue = btn; return; }
     if (!P.act.m.ultimate && P.act.t > P.act.m.dur * 0.45) P.queue = btn;
     return;
@@ -467,22 +512,12 @@ function press(btn) {
 function doPress(btn) {
   P.dash = null;
   let name = btn;
-  if (btn === 'chain') {
+  if (typeof btn === 'object') name = btn.move; // a combo that was queued
+  else if (btn === 'chain') {
     if (G.meter >= 100) { name = 'ultimate'; G.meter = 0; } else name = 'chain';
-    G.hist = [];
-  } else {
-    const last = G.hist[G.hist.length - 1];
-    if (last && G.t - last.t > 0.9) G.hist = [];
-    G.hist.push({ b: btn, t: G.t });
-    if (G.hist.length > 3) G.hist.shift();
-    if (G.hist.length === 3) {
-      const s = G.hist.map(h => h.b).join(',');
-      const hit = SEQS.find(q => q.seq === s);
-      if (hit) { name = hit.move; G.hist = []; }
-    }
-    // ↓ + punch on the ground: an uppercut that sends him flying
-    if (name === 'punch' && held.down && !P.air) { name = 'uppercut'; G.hist = []; }
   }
+  // ↓ + punch on the ground: an uppercut that sends him flying
+  else if (name === 'punch' && held.down && !P.air) name = 'uppercut';
   if (P.air && groundOnly(name)) { // grabs and the chain need solid ground: fire on landing
     if (name === 'ultimate') G.meter = 100;
     P.queue = btn; return;
@@ -655,8 +690,11 @@ function updatePlayer(dt) {
         if (d * f > 0) P.x += Math.sign(d) * Math.min(Math.abs(d), 900 * dt);
       }
     } else if (m.grab && !A.checked) {
-      const tx = O.x - f * (m.reach - 10), d = tx - P.x;
-      if (d * f > 0) P.x += Math.sign(d) * Math.min(Math.abs(d), 900 * dt);
+      if (m.chase) P.f = Math.sign(O.x - P.x) || P.f;
+      const tx = O.x - P.f * (m.reach - 10), d = tx - P.x;
+      if (d * P.f > 0) P.x += Math.sign(d) * Math.min(Math.abs(d), (m.chase ? 1500 : 900) * dt);
+      // 連環摔 dashes in and keeps reaching until he is in range
+      if (m.chase && A.t > 0.14 && Math.abs(d) > 20 && (A.chase = (A.chase || 0) + dt) < 0.6) A.t = 0.14;
     }
     if (m.hits) {
       while (A.hi < m.hits.length && A.t >= m.hits[A.hi].t) {
@@ -750,20 +788,62 @@ function lyingShoulder(x) {
   return sh;
 }
 /* 過肩摔 (seoi-nage): grab his wrist, pull, turn your back, load him over your shoulder, flip him to the other side */
+/* pulled in by the wrist, stumbling toward you */
+function pullIn(A) {
+  const f = A.f;
+  P.f = f;
+  O.hold = null; O.h = 0; O.bodyRot = lerp(O.bodyRot, -0.25, 0.3);
+  O.x += (P.x + f * 58 - O.x) * 0.25;
+  O.pose = lerpPose(O.pose, HURT2, 0.3);
+  P.J = solveBody(P, PD);
+  const J0 = solveBody(O, OD);
+  reachArm(O, OD, J0.sh, P.J.hF);
+  A.s0 = J0.sh;
+}
+/* 連環摔: hoist him overhead by the legs and smash him into the floor in front, behind, in front, behind */
+const RUSH_SWING = [[0.3, 0.9], [0.48, 0], [0.72, 2.05], [0.85, 0.2], [1.12, -2.05], [1.25, -0.2], [1.52, 2.05], [1.65, 0.2], [1.95, -2.05]];
+const RUSH_SLAMS = [0.72, 1.12, 1.52];
+function slamRush(A, t) {
+  if (t < 0.3) { pullIn(A); return; }
+  const f = A.f;
+  if (A.px == null) { A.px = clamp(P.x, 200, W - 200); A.slam = 0; }
+  P.x = lerp(P.x, A.px, 0.2);
+  P.f = f;
+  P.J = solveBody(P, PD);
+  // swing angle: 0 = straight overhead, + = in front of you, - = behind you
+  let th = RUSH_SWING[RUSH_SWING.length - 1][1];
+  for (let i = 1; i < RUSH_SWING.length; i++) {
+    const [t0, a0] = RUSH_SWING[i - 1], [t1, a1] = RUSH_SWING[i];
+    if (t <= t1) { th = lerp(a0, a1, t1 - t0 < 1e-6 ? 1 : (i % 2 ? easeOut : ease)((t - t0) / (t1 - t0))); break; }
+  }
+  const grip = mix2(P.J.hF, P.J.hB, 0.5), dx = Math.sin(th) * f, dy = -Math.cos(th);
+  const jit = () => (Math.random() - 0.5) * 0.3;
+  O.pose = lerpPose(O.pose, AIR, 0.3).map((v, i) => (i > 1 ? v + jit() : v));
+  O.bodyRot = -th;
+  O.hold = { x: grip[0] + dx * 34, y: Math.min(grip[1] + dy * 34, GY - 20) };
+  while (A.slam < RUSH_SLAMS.length && t >= RUSH_SLAMS[A.slam]) {
+    const side = A.slam % 2 ? -f : f;
+    A.slam++;
+    landFx(1.1);
+    applyHit(5, 'slam', side, { light: A.slam < RUSH_SLAMS.length });
+    if (G.ko) { A.done = true; release(A, -f); return; }
+  }
+  if (t >= 1.95) { // last one: smash him down behind you and let go
+    A.done = true;
+    landFx(1.8);
+    release(A, -f);
+    applyHit(12, 'slam', -f);
+  }
+}
+function release(A, dir) {
+  O.x = clamp(O.hold ? O.hold.x : O.x, 62, W - 62); O.hold = null;
+  O.h = 1; O.vy = 380; O.vx = dir * 300; O.bounced = true;
+  O.state = 'air'; O.bodyRot = 2 * dir * A.f;
+}
 function seoiNage(A, t) {
   const f = A.f, jit = () => (Math.random() - 0.5) * 0.25;
   let body = lerpPose(O.pose, AIR, 0.25).map((v, i) => (i > 1 ? v + jit() : v));
-  if (t < 0.3) { // pulled in by the wrist, stumbling toward you
-    P.f = f;
-    O.hold = null; O.bodyRot = lerp(O.bodyRot, -0.25, 0.3);
-    O.x += (P.x + f * 58 - O.x) * 0.25;
-    O.pose = lerpPose(O.pose, HURT2, 0.3);
-    P.J = solveBody(P, PD);
-    const J0 = solveBody(O, OD);
-    reachArm(O, OD, J0.sh, P.J.hF);
-    A.s0 = J0.sh;
-    return;
-  }
+  if (t < 0.3) { pullIn(A); return; }
   // turn in: your back to him, his arm over your shoulder
   P.f = -f;
   if (A.landX == null) A.landX = clamp(P.x - f * 400, 62, W - 62);
@@ -799,14 +879,17 @@ function updateGrab(A, m) {
   if (!A.checked && t >= 0.15) {
     A.checked = true;
     const dx = (O.x - P.x) * f;
-    if (dx > -10 && dx < m.reach + 40 && O.h < 40 && (O.state === 'idle' || O.state === 'hit')) {
+    const ok = O.state === 'idle' || O.state === 'hit' || (m.chase && (O.state === 'down' || O.state === 'getup'));
+    if (dx > -10 && dx < m.reach + 40 && O.h < 40 && ok) {
       A.grabbed = true; A.f = f; O.state = 'grabbed'; O.vx = O.vy = 0; O.f = -f; O.h = 0;
       SFX.grab();
       const line = pick(GRAB_LINES); setBubble(line, true); speak(line, 0.8, true);
     }
   }
+  if (A.checked && !A.grabbed && m.grab === 'rush') { A.t = Math.max(A.t, m.dur - 0.3); return; } // whiffed
   if (!A.grabbed || A.done) { if (m.grab === 'pile') P.h = 0; return; }
   if (m.grab === 'throw') { seoiNage(A, t); return; }
+  if (m.grab === 'rush') { slamRush(A, t); return; }
   const jit = () => (Math.random() - 0.5) * 0.3;
   O.pose = lerpPose(O.pose, AIR, 0.25).map((v, i) => (i > 1 ? v + jit() : v));
   {
