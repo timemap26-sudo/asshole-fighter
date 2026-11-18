@@ -70,12 +70,16 @@ const SFX = {
 };
 
 /* ------------------------------------------------------------------ voice */
-let voiceOn = true, zhVoice = null, lastSpeak = 0;
+let voiceOn = true, zhVoice = null, zhVoiceMale = false, lastSpeak = 0;
 const hasTTS = 'speechSynthesis' in window;
 function loadVoices() {
   if (!hasTTS) return;
   const vs = speechSynthesis.getVoices();
-  zhVoice = vs.find(v => /zh[-_]TW/i.test(v.lang)) || vs.find(v => /zh[-_]HK/i.test(v.lang)) || vs.find(v => /^zh/i.test(v.lang)) || null;
+  const zh = vs.filter(v => /^zh/i.test(v.lang) || /chinese/i.test(v.name));
+  const male = v => /male|男|zhiwei|yunjhe|yunxi|yunyang|yunjian|yunxia|yunze|yunfeng|yunhao|kangkang|danny|wanlung|li-?mu|han|liang/i.test(v.name) && !/female|女/i.test(v.name);
+  const rank = v => (male(v) ? 0 : 10) + (/zh[-_]TW/i.test(v.lang) ? 0 : /zh[-_]HK/i.test(v.lang) ? 1 : 2);
+  zhVoice = zh.sort((a, b) => rank(a) - rank(b))[0] || null;
+  zhVoiceMale = !!zhVoice && male(zhVoice);
 }
 if (hasTTS) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
 function speak(text, urgency = 0, force = false) {
@@ -88,7 +92,8 @@ function speak(text, urgency = 0, force = false) {
     const u = new SpeechSynthesisUtterance(text.replace(/[…]/g, ','));
     u.lang = zhVoice ? zhVoice.lang : 'zh-TW';
     if (zhVoice) u.voice = zhVoice;
-    u.pitch = clamp(1.15 + urgency * 0.7, 0, 2);
+    // male voice: a real male voice keeps a low pitch; a female-only system voice gets pitched way down
+    u.pitch = clamp((zhVoiceMale ? 0.8 : 0.35) + urgency * 0.35, 0, 2);
     u.rate = clamp(1.05 + urgency * 0.35, 0.5, 2);
     speechSynthesis.speak(u);
   } catch (e) { /* no voice, no problem */ }
@@ -137,6 +142,9 @@ const ed = { img: null, zoom: 1, rot: 0, ox: 0, oy: 0 };
 const edC = $('#editor'), edX = edC.getContext('2d');
 const ES = edC.width, ER = ES * 0.42;
 const ZMIN = 0.3, ZMAX = 12;
+// face guide sits low and small inside the crop so the hair above the forehead stays in
+const FT_S = 0.68, FT_DY = 0.16;
+const ft = (u, v) => [u * FT_S, v * FT_S + FT_DY]; // template coords (units of ER) -> crop coords
 function drawSource(x, cx, cy, k) {
   if (!ed.img) { x.drawImage(defaultFace, cx - ER * k, cy - ER * k, 2 * ER * k, 2 * ER * k); return; }
   const img = ed.img, iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
@@ -153,12 +161,18 @@ function drawEditor() {
   x.beginPath(); x.rect(0, 0, ES, ES); x.rect(c - ER, c - ER, 2 * ER, 2 * ER); x.fill('evenodd');
   x.save();
   x.strokeStyle = 'rgba(255,215,0,0.95)'; x.lineWidth = 3; x.setLineDash([12, 9]);
-  x.beginPath(); x.ellipse(c, c, ER * 0.8, ER * 0.98, 0, 0, TAU); x.stroke();
-  for (const s of [-1, 1]) { x.beginPath(); x.ellipse(c + s * 0.32 * ER, c - 0.1 * ER, 0.14 * ER, 0.085 * ER, 0, 0, TAU); x.stroke(); }
-  x.beginPath(); x.ellipse(c, c + 0.45 * ER, 0.24 * ER, 0.09 * ER, 0, 0, TAU); x.stroke();
+  const P = (u, v) => { const [a, b] = ft(u, v); return [c + a * ER, c + b * ER]; }, k = FT_S * ER;
+  x.beginPath(); x.ellipse(...P(0, 0), k * 0.8, k * 0.98, 0, 0, TAU); x.stroke();
+  for (const s of [-1, 1]) { x.beginPath(); x.ellipse(...P(s * 0.32, -0.1), k * 0.14, k * 0.085, 0, 0, TAU); x.stroke(); }
+  x.beginPath(); x.ellipse(...P(0, 0.45), k * 0.24, k * 0.09, 0, 0, TAU); x.stroke();
+  // hair zone
+  x.strokeStyle = 'rgba(120,200,255,0.8)'; x.setLineDash([6, 8]); x.lineWidth = 2;
+  x.beginPath(); x.ellipse(...P(0, -0.25), k * 1.0, k * 1.0, 0, Math.PI, TAU); x.stroke();
   x.setLineDash([]);
-  x.fillStyle = 'rgba(255,215,0,0.95)'; x.font = `900 22px ${FONT}`; x.textAlign = 'center';
-  x.fillText('眼', c - 0.32 * ER, c - 0.24 * ER); x.fillText('眼', c + 0.32 * ER, c - 0.24 * ER); x.fillText('嘴', c, c + 0.66 * ER);
+  x.fillStyle = 'rgba(120,200,255,0.9)'; x.font = `900 18px ${FONT}`; x.textAlign = 'center';
+  x.fillText('頭髮', ...P(0, -1.05));
+  x.fillStyle = 'rgba(255,215,0,0.95)'; x.font = `900 20px ${FONT}`;
+  x.fillText('眼', ...P(-0.32, -0.26)); x.fillText('眼', ...P(0.32, -0.26)); x.fillText('嘴', ...P(0, 0.7));
   x.restore();
 }
 /* Cut the head out of the photo: flood-fill the background in from the edges
@@ -167,7 +181,11 @@ function drawEditor() {
 function cutoutHead(d) {
   const N = FS * FS, bg = new Uint8Array(N), seed = new Int32Array(N).fill(-1), q = new Int32Array(N);
   let qh = 0, qt = 0;
-  const core = (i) => { const px = (i % FS) / FS - 0.5, py = ((i / FS) | 0) / FS - 0.5; return (px / 0.17) ** 2 + (py / 0.24) ** 2 < 1; };
+  // protected core: the face (guide oval, slightly shrunk), in crop units where the crop is [-1,1]
+  const core = (i) => {
+    const px = ((i % FS) / FS - 0.5) * 2, py = (((i / FS) | 0) / FS - 0.5) * 2;
+    return (px / (0.7 * FT_S)) ** 2 + ((py - FT_DY) / (0.9 * FT_S)) ** 2 < 1;
+  };
   const push = (i, s) => { bg[i] = 1; seed[i] = s; q[qt++] = i; };
   for (let k = 0; k < FS; k++) for (const i of [k, (FS - 1) * FS + k, k * FS, k * FS + FS - 1]) if (!bg[i]) push(i, i);
   const dist = (a, b) => Math.abs(d[a * 4] - d[b * 4]) + Math.abs(d[a * 4 + 1] - d[b * 4 + 1]) + Math.abs(d[a * 4 + 2] - d[b * 4 + 2]);
@@ -207,6 +225,13 @@ function cutoutHead(d) {
     const fg = new Float32Array(N);
     for (let i = 0; i < N; i++) fg[i] = bg[i] ? 0 : 1;
     a.set(box(box(fg, v => (v > 0.99 ? 1 : 0)), v => v));
+  }
+  // never keep anything outside a head shape (face + hair on top), so busy backgrounds and shoulders go too
+  const hcy = FT_DY - 0.12 * FT_S, hrx = 1.08 * FT_S, hry = 1.32 * FT_S;
+  for (let i = 0; i < N; i++) {
+    const px = ((i % FS) / FS - 0.5) * 2, py = (((i / FS) | 0) / FS - 0.5) * 2;
+    const r = Math.hypot(px / hrx, (py - hcy) / (py > hcy ? hry * 0.8 : hry));
+    a[i] *= clamp((1 - r) / 0.08, 0, 1);
   }
   for (let i = 0; i < N; i++) d[i * 4 + 3] = Math.round(d[i * 4 + 3] * a[i]);
 }
@@ -338,7 +363,7 @@ const SEQS = [
 
 /* ------------------------------------------------------------------ entities */
 const PD = { torso: 68, ua: 30, fa: 28, th: 42, sh: 42, headR: 21, neck: 5 };
-const OD = { torso: 62, ua: 27, fa: 25, th: 38, sh: 38, headR: 46, neck: 4 };
+const OD = { torso: 62, ua: 27, fa: 25, th: 38, sh: 38, headR: 58, neck: -6 };
 const G = { running: false };
 const P = {};
 const O = {};
@@ -1547,9 +1572,8 @@ function applyAlignment(img, f) {
   const c = ES / 2;
   // image points relative to the picture centre (how drawSource places the image)
   const rel = p => ({ x: p.x - iw / 2, y: p.y - ih / 2 });
-  const dst = [
-    { x: c - 0.32 * ER, y: c - 0.1 * ER }, { x: c + 0.32 * ER, y: c - 0.1 * ER }, { x: c, y: c + 0.45 * ER },
-  ];
+  const tp = (u, v) => { const [a, b] = ft(u, v); return { x: c + a * ER, y: c + b * ER }; };
+  const dst = [tp(-0.32, -0.1), tp(0.32, -0.1), tp(0, 0.45)];
   const T = fitSimilarity([rel(f.eyeL), rel(f.eyeR), rel(f.mouth)], dst, [1, 1, 0.7]);
   const base = 2 * ER / Math.min(iw, ih);
   ed.zoom = clamp(T.scale / base, ZMIN, ZMAX);
@@ -1559,7 +1583,7 @@ function applyAlignment(img, f) {
   const em = rel({ x: (f.eyeL.x + f.eyeR.x) / 2, y: (f.eyeL.y + f.eyeR.y) / 2 });
   const mm = rel(f.mouth);
   const anchor = { x: em.x * 0.6 + mm.x * 0.4, y: em.y * 0.6 + mm.y * 0.4 };
-  const target = { x: c, y: (c - 0.1 * ER) * 0.6 + (c + 0.45 * ER) * 0.4 };
+  const target = { x: c, y: dst[0].y * 0.6 + dst[2].y * 0.4 };
   ed.ox = target.x - (cos * anchor.x - sin * anchor.y) * s - c;
   ed.oy = target.y - (sin * anchor.x + cos * anchor.y) * s - c;
   $('#zoom').value = ed.zoom; $('#rotate').value = Math.round(ed.rot * 180 / Math.PI);
