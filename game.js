@@ -766,7 +766,7 @@ function seoiNage(A, t) {
   }
   // turn in: your back to him, his arm over your shoulder
   P.f = -f;
-  if (A.landX == null) A.landX = clamp(P.x - f * 240, 62, W - 62);
+  if (A.landX == null) A.landX = clamp(P.x - f * 400, 62, W - 62);
   P.J = solveBody(P, PD);
   const shTop = [P.J.sh[0] + f * 10, P.J.sh[1] - 12];
   let S, rot;
@@ -789,7 +789,7 @@ function seoiNage(A, t) {
   }
   // slam — flat on his back on the far side, head toward you
   A.done = true; O.hold = null;
-  O.x = A.landX; O.h = 0; O.vx = -f * 40; O.vy = 0;
+  O.x = A.landX; O.h = 0; O.vx = -f * 450; O.vy = 0; // slides further after the slam
   O.bodyRot = -Math.PI / 2; O.state = 'down'; O.st = 1.0;
   landFx(1.5);
   applyHit(16, 'slam', -f);
