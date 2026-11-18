@@ -1150,9 +1150,29 @@ function dot(p, r, col) {
   ctx.fillStyle = col; ctx.strokeStyle = '#120d1a'; ctx.lineWidth = 2.5;
   ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, TAU); ctx.fill(); ctx.stroke();
 }
-function foot(J, k, col) {
-  const p = J[k], v = J.footVec;
-  seg(p, [p[0] + v[0] * 12, p[1] + v[1] * 12], 9, col);
+// 黑色亮面皮鞋：鞋身 + 厚鞋底 + 鞋跟 + 鞋帶 + 反光
+function leatherShoe(J, k, back) {
+  const p = J[k], v = J.footVec, f = Math.sign(v[0]) || 1;
+  ctx.save(); ctx.translate(p[0], p[1]); ctx.rotate(Math.atan2(v[1], v[0] * f)); ctx.scale(f, 1); ctx.translate(0, -4);
+  const body = back ? '#141218' : '#1c1a22', sole = '#0b0a0e';
+  ctx.strokeStyle = '#120d1a'; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+  // 鞋底 + 鞋跟
+  ctx.fillStyle = sole;
+  ctx.beginPath(); ctx.moveTo(-8, 6); ctx.lineTo(21, 6); ctx.quadraticCurveTo(24, 6, 23, 9); ctx.lineTo(-8, 9); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillRect(-8, 8, 7, 3); ctx.strokeRect(-8, 8, 7, 3);
+  // 鞋身（圓頭牛津鞋）
+  ctx.fillStyle = body;
+  ctx.beginPath(); ctx.moveTo(-8, 6); ctx.lineTo(-8, -6); ctx.quadraticCurveTo(-2, -9, 4, -6);
+  ctx.quadraticCurveTo(12, -4, 18, -1); ctx.quadraticCurveTo(24, 1, 22, 6); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // 鞋帶
+  ctx.strokeStyle = back ? '#3a3640' : '#4a4652'; ctx.lineWidth = 1.5;
+  for (const x of [3, 6.5]) { ctx.beginPath(); ctx.moveTo(x - 1.5, -6); ctx.lineTo(x + 2, -4.5); ctx.stroke(); }
+  // 亮面反光
+  if (!back) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(12, -2.5); ctx.quadraticCurveTo(17, -1, 19.5, 1.5); ctx.stroke();
+  }
+  ctx.restore();
 }
 function shadow(x, h, w) {
   const s = clamp(1 - h / 400, 0.3, 1);
@@ -1261,14 +1281,14 @@ function drawPlayer() {
 function drawOpp() {
   const J = O.J, SUIT = '#2d3040', SUITD = '#22242f', SK = face.skin;
   seg(J.sh, J.eB, 14, SUITD); seg(J.eB, J.hB, 12, SUITD); dot(J.hB, 7, SK);
-  seg(J.hip, J.kB, 17, '#1d1f28'); seg(J.kB, J.fB, 15, '#1d1f28'); foot(J, 'fB', '#4a3020');
+  seg(J.hip, J.kB, 17, '#1d1f28'); seg(J.kB, J.fB, 15, '#1d1f28'); leatherShoe(J, 'fB', true);
   seg(J.hip, J.neck, 32, SUIT);
   // shirt collar
   const dx = J.hip[0] - J.neck[0], dy = J.hip[1] - J.neck[1], len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
   const n = J.neck;
   ctx.fillStyle = '#f4f4f4';
   ctx.beginPath(); ctx.moveTo(n[0] - uy * 9, n[1] + ux * 9); ctx.lineTo(n[0] + uy * 9, n[1] - ux * 9); ctx.lineTo(n[0] + ux * 22, n[1] + uy * 22); ctx.closePath(); ctx.fill();
-  seg(J.hip, J.kF, 17, '#262833'); seg(J.kF, J.fF, 15, '#262833'); foot(J, 'fF', '#5a3d2b');
+  seg(J.hip, J.kF, 17, '#262833'); seg(J.kF, J.fF, 15, '#262833'); leatherShoe(J, 'fF', false);
   seg(J.sh, J.eF, 15, SUIT); seg(J.eF, J.hF, 13, SUIT); dot(J.hF, 7, SK);
   drawOppHead(J);
 }
