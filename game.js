@@ -1263,14 +1263,11 @@ function drawOpp() {
   seg(J.sh, J.eB, 14, SUITD); seg(J.eB, J.hB, 12, SUITD); dot(J.hB, 7, SK);
   seg(J.hip, J.kB, 17, '#1d1f28'); seg(J.kB, J.fB, 15, '#1d1f28'); foot(J, 'fB', '#4a3020');
   seg(J.hip, J.neck, 32, SUIT);
-  // shirt + tie
+  // shirt collar
   const dx = J.hip[0] - J.neck[0], dy = J.hip[1] - J.neck[1], len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
   const n = J.neck;
   ctx.fillStyle = '#f4f4f4';
   ctx.beginPath(); ctx.moveTo(n[0] - uy * 9, n[1] + ux * 9); ctx.lineTo(n[0] + uy * 9, n[1] - ux * 9); ctx.lineTo(n[0] + ux * 22, n[1] + uy * 22); ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = '#c1121f'; ctx.lineWidth = 6; ctx.lineCap = 'round';
-  const sway = Math.sin(G.t * 6) * 0.1 + O.headRot * 0.3;
-  ctx.beginPath(); ctx.moveTo(n[0] + ux * 3, n[1] + uy * 3); ctx.lineTo(n[0] + ux * 34 + uy * sway * 20, n[1] + uy * 34 - ux * sway * 20); ctx.stroke();
   seg(J.hip, J.kF, 17, '#262833'); seg(J.kF, J.fF, 15, '#262833'); foot(J, 'fF', '#5a3d2b');
   seg(J.sh, J.eF, 15, SUIT); seg(J.eF, J.hF, 13, SUIT); dot(J.hF, 7, SK);
   drawOppHead(J);
