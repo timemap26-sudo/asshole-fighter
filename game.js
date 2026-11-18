@@ -1700,6 +1700,15 @@ $('#file').addEventListener('change', e => loadFile(e.target.files[0]));
 const card = $('#setup .card');
 card.addEventListener('dragover', e => e.preventDefault());
 card.addEventListener('drop', e => { e.preventDefault(); loadFile(e.dataTransfer.files[0]); });
+// paste a picture straight in (Ctrl+V / Cmd+V) while the setup card is open
+addEventListener('paste', e => {
+  if (!$('#setup').classList.contains('show')) return;
+  const items = [...(e.clipboardData?.items || [])];
+  const it = items.find(i => i.kind === 'file' && /^image\//.test(i.type));
+  if (!it) return; // plain text: let it paste into the name box as usual
+  e.preventDefault();
+  loadFile(it.getAsFile());
+});
 $('#start').addEventListener('click', startGame);
 $('#again').addEventListener('click', startGame);
 $('#change').addEventListener('click', openSetup);
