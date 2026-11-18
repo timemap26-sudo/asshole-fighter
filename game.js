@@ -1395,8 +1395,8 @@ function drawOppHead(J) {
     ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.ellipse(ex - 0.05 * R, ey - 0.08 * R, R * 0.05, R * 0.025, -0.4, 0, TAU); ctx.fill();
     ctx.restore();
   }
-  // mouth: a frowning, trembling open mouth with red lips (wailing takes over later).
-  // always drawn open with lip colour + tongue — a thin dark arch read as a moustache
+  // mouth: a frowning, trembling open mouth (no lips) (wailing takes over later).
+  // drawn open with teeth + tongue, no lip outline — a thin dark arch read as a moustache
   if (d > 0.05 && d <= 0.62 && !(O.flinch > 0)) {
     const [mu, mv, mw] = onFace(mouth.u, mouth.vI);
     const a = Math.min(1, (d - 0.05) * 5), frown = (0.04 + d * 0.12) * R, w = (0.21 + d * 0.06) * R * mw;
@@ -1422,7 +1422,6 @@ function drawOppHead(J) {
     ctx.fillStyle = '#e0607a'; // tongue
     ctx.beginPath(); ctx.ellipse(0, frown * 0.2 + open * 0.95, w * 0.5, open * 0.45, 0, 0, TAU); ctx.fill();
     ctx.restore();
-    shape(); ctx.strokeStyle = '#c23a4c'; ctx.lineWidth = R * 0.05; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
     ctx.restore();
   }
   // tears streaming
