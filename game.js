@@ -594,7 +594,7 @@ function addMark(kind, dir) {
     M.push({ type: 'bruise', u: rand(-0.5, 0.5), v: rand(-0.5, 0.4), s: rand(1.1, 1.6) });
     if (O.lumps.length < 4 && Math.random() < 0.6) O.lumps.push({ a: -Math.PI / 2 + rand(-0.9, 0.9), s: rand(0.8, 1.2) });
   }
-  if (M.length > 30) M.shift();
+  if (M.length > 14) M.shift();
 }
 function triggerKO(dir) {
   G.ko = true; G.koT = 0; G.slow = 0.3; G.slowT = 1.4; G.flash = 0.9;
@@ -1087,12 +1087,20 @@ function drawOpp() {
   drawOppHead(J);
 }
 
-function drawFaceImg(src, R, wob) {
-  if (wob > 0.01) {
-    const N = 24, sh = FS / N, dh = (2 * R) / N;
+// warp: 0..1 — the photo itself gets squashed out of shape (pinched forehead/chin,
+// puffed lopsided cheeks, sagging jaw) so the face stays recognisable, just mangled.
+function drawFaceImg(src, R, wob, warp = 0) {
+  if (wob > 0.01 || warp > 0.01) {
+    const N = 64, sh = FS / N;
+    const fy = (k) => k + warp * 0.1 * Math.sin(Math.PI * k) * (1 - k * 0.6);
     for (let i = 0; i < N; i++) {
-      const off = Math.sin(G.t * 14 + i * 0.9) * wob * R * 0.09;
-      ctx.drawImage(src, 0, i * sh, FS, sh, -R + off, -R + i * dh, 2 * R, dh + 0.6);
+      const v = (i + 0.5) / N;
+      const y0 = (fy(i / N) * 2 - 1) * R, y1 = (fy((i + 1) / N) * 2 - 1) * R;
+      const puff = Math.exp(-(((v - 0.62) / 0.2) ** 2));
+      const w = 2 * R * (1 - warp * 0.24 * (1 - puff));
+      const off = Math.sin(G.t * 14 + v * 21.6) * wob * R * 0.09
+        + warp * R * (0.08 * Math.sin(v * Math.PI * 2.2 + 0.6) + 0.02 * Math.sin(G.t * 3 + v * 6));
+      ctx.drawImage(src, 0, i * sh, FS, sh, -w / 2 + off, y0, w, y1 - y0 + 0.6);
     }
   } else ctx.drawImage(src, -R, -R, 2 * R, 2 * R);
 }
@@ -1136,17 +1144,21 @@ function drawOppHead(J) {
     ctx.fillStyle = 'rgba(220,60,60,0.35)'; ctx.beginPath(); ctx.arc(lx, ly, lr, 0, TAU); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.arc(lx - lr * 0.3, ly - lr * 0.3, lr * 0.25, 0, TAU); ctx.fill();
   }
-  const wob = G.ko ? 1 : clamp((d - 0.78) / 0.22, 0, 1);
+  const wob = G.ko ? 0.6 : clamp((d - 0.78) / 0.22, 0, 1) * 0.6;
+  const warp = G.ko ? 1 : clamp((d - 0.15) / 0.75, 0, 1);
   const lc = headLayer.getContext('2d');
   lc.setTransform(1, 0, 0, 1, 0, 0); lc.clearRect(0, 0, HL, HL);
   lc.setTransform(HL / (2 * R), 0, 0, HL / (2 * R), HL / 2, HL / 2);
   ctx = lc;
   ctx.save();
-  drawFaceImg(face.canvas, R, wob);
-  const gA = G.ko ? 0.9 : clamp((d - 0.35) / 0.6, 0, 1) * 0.75;
-  if (gA > 0) { ctx.globalAlpha = gA; drawFaceImg(face.gray, R, wob); ctx.globalAlpha = 1; }
+  drawFaceImg(face.canvas, R, wob, warp);
+  const gA = G.ko ? 0.25 : clamp((d - 0.35) / 0.6, 0, 1) * 0.22;
+  if (gA > 0) { ctx.globalAlpha = gA; drawFaceImg(face.gray, R, wob, warp); ctx.globalAlpha = 1; }
+  // marks pile up, so fade each one as the count grows — the photo must stay readable
+  ctx.globalAlpha = 0.7 * Math.min(1, 5 / Math.max(5, O.marks.length));
   for (const m of O.marks) drawMark(m, R);
-  if (d > 0.6) { ctx.fillStyle = `rgba(110,170,110,${(d - 0.6) * 0.35})`; ctx.fillRect(-R, -R, 2 * R, 2 * R); }
+  ctx.globalAlpha = 1;
+  if (d > 0.6) { ctx.fillStyle = `rgba(110,170,110,${(d - 0.6) * 0.18})`; ctx.fillRect(-R, -R, 2 * R, 2 * R); }
   // flushed, puffy cheeks — redder and wider the more it hurts
   if (d > 0.12) {
     const a = Math.min(1, (d - 0.12) * 1.6), cr = R * (0.2 + d * 0.12);
@@ -1172,7 +1184,7 @@ function drawOppHead(J) {
     ctx.save();
     ctx.beginPath(); ctx.ellipse(ex, ey - 0.02 * R, R * (0.17 + 0.07 * k), R * (0.1 + 0.1 * k), 0, 0, TAU);
     const g = ctx.createRadialGradient(ex, ey - 0.05 * R, 0, ex, ey, R * 0.24);
-    g.addColorStop(0, `rgba(150,60,140,${0.6 + 0.35 * k})`); g.addColorStop(1, `rgba(90,30,100,${0.5 + 0.4 * k})`);
+    g.addColorStop(0, `rgba(150,60,140,${0.3 + 0.2 * k})`); g.addColorStop(1, `rgba(90,30,100,${0.25 + 0.2 * k})`);
     ctx.fillStyle = g; ctx.fill();
     ctx.strokeStyle = 'rgba(40,10,40,0.7)'; ctx.lineWidth = R * 0.02;
     ctx.beginPath(); ctx.moveTo(ex - 0.15 * R, ey + 0.04 * R * (1 - k)); ctx.quadraticCurveTo(ex, ey + 0.08 * R, ex + 0.15 * R, ey + 0.04 * R * (1 - k)); ctx.stroke();
@@ -1202,7 +1214,7 @@ function drawOppHead(J) {
   }
   // tears streaming
   if (d > 0.28) {
-    const a = Math.min(1, (d - 0.28) * 3), w = R * (0.05 + d * 0.08);
+    const a = Math.min(1, (d - 0.28) * 3) * 0.75, w = R * (0.035 + d * 0.035);
     for (const s of [-1, 1]) {
       ctx.strokeStyle = `rgba(120,200,255,${0.7 * a})`; ctx.lineWidth = w;
       ctx.beginPath(); ctx.moveTo(s * 0.32 * R, 0.0);
@@ -1222,6 +1234,7 @@ function drawOppHead(J) {
     const open = (0.1 + 0.05 * Math.sin(t * 11) + (d - 0.62) * 0.25) * R;
     ctx.save(); ctx.translate(0, 0.46 * R);
     ctx.beginPath(); ctx.ellipse(0, 0, 0.26 * R, open, 0, 0, TAU);
+    ctx.globalAlpha = 0.7;
     ctx.fillStyle = 'rgba(60,8,12,0.95)'; ctx.fill();
     ctx.clip();
     ctx.fillStyle = '#fff'; ctx.fillRect(-0.2 * R, -open, 0.4 * R, open * 0.38);
@@ -1233,7 +1246,7 @@ function drawOppHead(J) {
   if (d > 0.45) {
     ctx.save(); ctx.translate(-0.4 * R, -0.58 * R);
     for (const r of [0.6, -0.6]) {
-      ctx.save(); ctx.rotate(r); ctx.fillStyle = '#e8c9a0'; ctx.strokeStyle = '#a78559'; ctx.lineWidth = 1.5;
+      ctx.save(); ctx.rotate(r); ctx.globalAlpha = 0.8; ctx.fillStyle = '#e8c9a0'; ctx.strokeStyle = '#a78559'; ctx.lineWidth = 1.5;
       ctx.fillRect(-0.32 * R, -0.08 * R, 0.64 * R, 0.16 * R); ctx.strokeRect(-0.32 * R, -0.08 * R, 0.64 * R, 0.16 * R);
       ctx.fillStyle = '#f6e3c8'; ctx.fillRect(-0.09 * R, -0.08 * R, 0.18 * R, 0.16 * R);
       ctx.restore();
@@ -1244,8 +1257,8 @@ function drawOppHead(J) {
   if (d > 0.85) {
     for (const s of [-1, 1]) {
       const ex = s * 0.32 * R, ey = -0.1 * R;
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex, ey, 0.16 * R, 0, TAU); ctx.fill();
-      ctx.strokeStyle = '#111'; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.beginPath(); ctx.arc(ex, ey, 0.16 * R, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(17,17,17,0.6)'; ctx.lineWidth = 1.5; ctx.beginPath();
       for (let a = 0; a < 4 * Math.PI; a += 0.25) {
         const rr = (a / (4 * Math.PI)) * 0.14 * R, aa = a + t * 8 * s;
         const px = ex + Math.cos(aa) * rr, py = ey + Math.sin(aa) * rr;
@@ -1297,7 +1310,7 @@ function drawOppHead(J) {
   const mc = maskLayer.getContext('2d');
   mc.setTransform(1, 0, 0, 1, 0, 0); mc.clearRect(0, 0, HL, HL);
   mc.setTransform(HL / (2 * R), 0, 0, HL / (2 * R), HL / 2, HL / 2);
-  ctx = mc; drawFaceImg(face.canvas, R, wob);
+  ctx = mc; drawFaceImg(face.canvas, R, wob, warp);
   lc.save(); lc.setTransform(1, 0, 0, 1, 0, 0); lc.globalCompositeOperation = 'destination-in';
   lc.drawImage(maskLayer, 0, 0); lc.restore();
   ctx = mainCtx;
@@ -1414,7 +1427,7 @@ function drawHUD() {
   const hc = hudLayer.getContext('2d');
   hc.clearRect(0, 0, 56, 56); hc.globalCompositeOperation = 'source-over';
   hc.drawImage(face.canvas, 0, 0, 56, 56);
-  const gA = G.ko ? 0.9 : clamp((dmgRatio() - 0.35) / 0.6, 0, 1) * 0.75;
+  const gA = G.ko ? 0.4 : clamp((dmgRatio() - 0.35) / 0.6, 0, 1) * 0.35;
   if (gA > 0) { hc.globalAlpha = gA; hc.drawImage(face.gray, 0, 0, 56, 56); hc.globalAlpha = 1; }
   if (O.hitFlash > 0) { hc.globalCompositeOperation = 'source-atop'; hc.fillStyle = `rgba(255,40,40,${O.hitFlash * 0.5})`; hc.fillRect(0, 0, 56, 56); hc.globalCompositeOperation = 'source-over'; }
   ctx.drawImage(hudLayer, px - 28, py - 28, 56, 56);
