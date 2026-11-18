@@ -372,9 +372,9 @@ function resetGame() {
   Object.assign(G, {
     t: 0, hitstop: 0, slow: 1, slowT: 0, shake: 0, combo: 0, comboT: 0, comboPop: 0, maxCombo: 0, hits: 0, meter: 0,
     particles: [], texts: [], bubble: null, bubbleCD: 1.5, ko: false, koT: 0, endShown: false, flash: 0, dim: 0,
-    banner: null, hist: [], stringCut: -1, bar: { x: 660, v: 0 }, startTime: performance.now(), sobCD: 2,
+    banner: null, hist: [], startTime: performance.now(), sobCD: 2,
   });
-  Object.assign(P, { x: 300, h: 0, vy: 0, air: false, crouch: false, f: 1, act: null, queue: null, pose: STANCE.slice(), walkPh: 0, bodyRot: 0, hold: null, open: null, J: null });
+  Object.assign(P, { x: 300, h: 0, vy: 0, air: false, crouch: false, f: 1, act: null, queue: null, dash: null, pose: STANCE.slice(), walkPh: 0, bodyRot: 0, hold: null, open: null, J: null });
   Object.assign(O, {
     x: 660, h: 0, vx: 0, vy: 0, f: -1, state: 'idle', st: 0, maxHp: 150, hp: 150, ghostHp: 150, stage: 0,
     headRot: 0, headRotV: 0, squash: 0, hitFlash: 0, marks: [], lumps: [], cracks: null, pose: COWER.slice(),
@@ -432,6 +432,22 @@ function jump() {
   SFX.whoosh();
 }
 const groundOnly = name => name === 'throw' || name === 'pile' || name === 'chain' || name === 'ultimate';
+/* double-tap ← or → to dash that way */
+const DASH_GAP = 0.28, DASH_T = 0.24, DASH_V = 1100;
+const lastTap = { left: -1, right: -1 };
+function tapDir(k) {
+  if (k !== 'left' && k !== 'right') return;
+  const now = performance.now() / 1000;
+  if (now - lastTap[k] < DASH_GAP) { lastTap[k] = -1; dash(k === 'left' ? -1 : 1); }
+  else lastTap[k] = now;
+}
+function dash(dir) {
+  if (!G.running || G.ko || P.air || P.act || P.dash) return;
+  audio();
+  P.dash = { dir, t: 0 };
+  noise({ dur: 0.18, type: 'bandpass', freq: 1800, freqEnd: 600, q: 0.8, gain: 0.35 });
+  for (let i = 0; i < 8; i++) G.particles.push({ type: 'dust', x: P.x - dir * rand(0, 30), y: GY + rand(-4, 4), vx: -dir * rand(80, 260), vy: rand(-80, -10), life: rand(0.3, 0.5), t: 0, size: rand(6, 12) });
+}
 function press(btn) {
   if (!G.running || G.ko) return;
   audio();
@@ -443,6 +459,7 @@ function press(btn) {
   doPress(btn);
 }
 function doPress(btn) {
+  P.dash = null;
   let name = btn;
   if (btn === 'chain') {
     if (G.meter >= 100) { name = 'ultimate'; G.meter = 0; } else name = 'chain';
@@ -580,7 +597,7 @@ function addMark(kind, dir) {
   if (M.length > 30) M.shift();
 }
 function triggerKO(dir) {
-  G.ko = true; G.koT = 0; G.slow = 0.3; G.slowT = 1.4; G.flash = 0.9; G.stringCut = 0;
+  G.ko = true; G.koT = 0; G.slow = 0.3; G.slowT = 1.4; G.flash = 0.9;
   P.queue = null;
   SFX.ko(); SFX.glass();
   const line = '我…我崩潰了…嗚哇啊啊啊!';
@@ -658,6 +675,17 @@ function updatePlayer(dt) {
       if (landed && P.queue && !G.ko) { const q = P.queue; P.queue = null; doPress(q); }
     } else {
     P.h = 0;
+    if (P.dash) {
+      const D = P.dash; D.t += dt;
+      const k = D.t / DASH_T;
+      P.x += D.dir * DASH_V * (1 - k * 0.6) * dt;
+      const s = STANCE.slice(); s[0] += D.dir * P.f * 0.35; s[6] -= 0.5; s[8] += 0.5;
+      P.pose = lerpPose(P.pose, s, 1 - Math.exp(-dt * 30));
+      if (Math.random() < dt * 40) G.particles.push({ type: 'dust', x: P.x - D.dir * 20, y: GY + rand(-4, 4), vx: -D.dir * rand(60, 160), vy: rand(-50, -10), life: 0.3, t: 0, size: rand(5, 9) });
+      if (D.t >= DASH_T || G.ko) P.dash = null;
+      if (O.state !== 'grabbed') P.f = Math.sign(O.x - P.x) || P.f;
+      return;
+    }
     if (held.up && !G.ko) jump();
     P.crouch = !G.ko && !P.air && held.down;
     if (P.air) { /* just jumped */ }
@@ -849,7 +877,7 @@ function update(rdt) {
   G.comboPop = Math.max(0, G.comboPop - rdt * 5);
   G.dim = lerp(G.dim, P.act && P.act.m.ultimate ? 0.62 : 0, 1 - Math.exp(-rdt * 8));
   if (G.ko) {
-    G.koT += rdt; G.stringCut += rdt;
+    G.koT += rdt;
     if (G.koT > 4 && !G.endShown) showEnd();
   }
   if (G.hitstop > 0) { G.hitstop -= rdt; return; }
@@ -863,10 +891,6 @@ function update(rdt) {
   updateFx(dt);
   G.comboT -= dt;
   if (G.comboT <= 0) G.combo = 0;
-  // puppet control bar sways after the body
-  const bt = O.hold ? O.hold.x : O.x;
-  G.bar.v += ((bt - G.bar.x) * 40 - G.bar.v * 6) * dt;
-  G.bar.x += G.bar.v * dt;
   // idle begging
   if (!G.ko) {
     G.bubbleCD -= dt;
@@ -1095,7 +1119,7 @@ function drawMark(m, R) {
     ctx.beginPath(); ctx.ellipse(x, y, R * 0.17, R * 0.12, 0, 0, TAU); ctx.stroke();
   }
 }
-const HL = 192, headLayer = mk(HL, HL), hudLayer = mk(56, 56);
+const HL = 192, headLayer = mk(HL, HL), maskLayer = mk(HL, HL), hudLayer = mk(56, 56);
 function drawOppHead(J) {
   const R = OD.headR, d = G.ko ? 1 : dmgRatio(), t = G.t;
   const tremble = O.state === 'idle' ? (0.6 + O.stage * 0.6) : 0;
@@ -1187,10 +1211,16 @@ function drawOppHead(J) {
     for (const pts of O.cracks) { ctx.beginPath(); pts.forEach(([u, v], i) => (i ? ctx.lineTo(u * R, v * R) : ctx.moveTo(u * R, v * R))); ctx.stroke(); }
   }
   if (O.hitFlash > 0) { ctx.fillStyle = `rgba(255,50,50,${O.hitFlash * 0.4})`; ctx.fillRect(-R, -R, 2 * R, 2 * R); }
-  // keep everything inside the head's own silhouette
-  ctx.globalCompositeOperation = 'destination-in';
-  drawFaceImg(face.canvas, R, wob);
   ctx.restore();
+  // keep everything inside the head's own silhouette. The wobbly face is drawn in slices,
+  // so build the mask on its own layer first: destination-in per slice would erase the
+  // slices drawn before it and the whole head would vanish.
+  const mc = maskLayer.getContext('2d');
+  mc.setTransform(1, 0, 0, 1, 0, 0); mc.clearRect(0, 0, HL, HL);
+  mc.setTransform(HL / (2 * R), 0, 0, HL / (2 * R), HL / 2, HL / 2);
+  ctx = mc; drawFaceImg(face.canvas, R, wob);
+  lc.save(); lc.setTransform(1, 0, 0, 1, 0, 0); lc.globalCompositeOperation = 'destination-in';
+  lc.drawImage(maskLayer, 0, 0); lc.restore();
   ctx = mainCtx;
   ctx.drawImage(headLayer, -R, -R, 2 * R, 2 * R);
   // sweat
@@ -1213,29 +1243,6 @@ function star(x, y, r, col) {
   ctx.beginPath();
   for (let i = 0; i < 10; i++) { const rr = i % 2 ? r * 0.45 : r, a = -Math.PI / 2 + (i * Math.PI) / 5; ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
   ctx.closePath(); ctx.fill(); ctx.stroke();
-}
-function headTop(J, R) { return [J.head[0] + Math.sin(J.headAngle + O.headRot) * R, J.head[1] - Math.cos(J.headAngle + O.headRot) * R]; }
-function drawStrings() {
-  const J = O.J, bx = G.bar.x, by = 26, tilt = clamp(G.bar.v * 0.0015, -0.4, 0.4);
-  const ends = [[bx - Math.cos(tilt) * 55, by - Math.sin(tilt) * 55], [bx + Math.cos(tilt) * 55, by + Math.sin(tilt) * 55], [bx, by]];
-  const targets = [O.f > 0 ? J.hB : J.hF, O.f > 0 ? J.hF : J.hB, headTop(J, OD.headR)];
-  const cut = G.stringCut;
-  ctx.strokeStyle = 'rgba(235,230,215,0.75)'; ctx.lineWidth = 1.5;
-  for (let i = 0; i < 3; i++) {
-    const [ex, ey] = ends[i], [tx, ty] = targets[i];
-    ctx.beginPath(); ctx.moveTo(ex, ey);
-    if (cut < 0) ctx.lineTo(tx, ty);
-    else {
-      const k = Math.max(0, 1 - cut * 1.2), lx = lerp(ex, tx, k), ly = lerp(ey, ty, k);
-      ctx.quadraticCurveTo(lerp(ex, lx, 0.5) + Math.sin(cut * 9 + i) * 20 * k, lerp(ey, ly, 0.5), lx, ly);
-    }
-    ctx.stroke();
-  }
-  ctx.save(); ctx.translate(bx, by); ctx.rotate(tilt);
-  ctx.fillStyle = '#7a5230'; ctx.strokeStyle = '#2a1a0d'; ctx.lineWidth = 2;
-  ctx.fillRect(-60, -5, 120, 10); ctx.strokeRect(-60, -5, 120, 10);
-  ctx.fillRect(-5, -22, 10, 34); ctx.strokeRect(-5, -22, 10, 34);
-  ctx.restore();
 }
 function drawParticles() {
   for (const p of G.particles) {
@@ -1403,7 +1410,6 @@ function render() {
   if (P.J && O.J) {
     shadow(O.hold ? O.hold.x : O.x, O.hold ? GY - O.hold.y : O.h, 46);
     shadow(P.x, P.h, 42);
-    drawStrings();
     drawOpp();
     drawPlayer();
     drawParticles();
@@ -1641,6 +1647,7 @@ addEventListener('keydown', e => {
     e.preventDefault();
     held[DIRS[e.code]] = true;
     if (e.code === 'ArrowUp' && !e.repeat) jump();
+    if (!e.repeat) tapDir(DIRS[e.code]);
   } else if (KEYMAP[e.code]) {
     e.preventDefault();
     if (!e.repeat) press(KEYMAP[e.code]);
@@ -1660,7 +1667,7 @@ document.querySelectorAll('[data-btn]').forEach(b => {
 });
 document.querySelectorAll('[data-hold]').forEach(b => {
   const k = b.dataset.hold;
-  b.addEventListener('pointerdown', e => { e.preventDefault(); b.setPointerCapture(e.pointerId); held[k] = true; if (k === 'up') jump(); b.classList.add('pressed'); });
+  b.addEventListener('pointerdown', e => { e.preventDefault(); b.setPointerCapture(e.pointerId); held[k] = true; if (k === 'up') jump(); tapDir(k); b.classList.add('pressed'); });
   const up = () => { held[k] = false; b.classList.remove('pressed'); };
   b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('lostpointercapture', up);
   b.addEventListener('contextmenu', e => e.preventDefault());
